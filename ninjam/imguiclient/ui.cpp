@@ -21,6 +21,7 @@
 
 #include "ninjam/njclient.h"
 #include "ninjam/njmisc.h"
+#include "auto_reconnect.h"
 
 #include "imgui.h"
 #include "imgui_stdlib.h"
@@ -43,6 +44,7 @@ static std::string g_workdir="ninjam-audio";
 static char g_hostbuf[256]="";
 static char g_userbuf[128]="";
 static char g_passbuf[128]="";
+static AutoReconnect g_auto_reconnect;
 
 static std::vector<std::string> g_chatlines;
 static bool g_chatscroll=true;
@@ -421,6 +423,13 @@ static void draw_status_bar()
   else
     ImGui::TextColored(kBad,"audio: %s",g_audioerr[0]?g_audioerr:"not running");
 
+  int retry_in=g_auto_reconnect.seconds_until_retry(ImGui::GetTime());
+  if (retry_in >= 0)
+  {
+    ImGui::SameLine();
+    ImGui::TextColored(kWarn,"reconnecting in %ds",retry_in);
+  }
+
   const char *hint="Enter: send chat   /msg <user> <text>: private   /topic <text>: set topic";
   ImVec2 ts=ImGui::CalcTextSize(hint);
   ImGui::SameLine(ImGui::GetWindowWidth()-ts.x-32.0f);
@@ -437,9 +446,21 @@ static void draw_status_bar()
 static bool try_connect()
 {
   if (!g_hostbuf[0]) return false;
+  g_auto_reconnect.manual_connect();
   g_client.SetWorkDir(g_workdir.c_str());
   g_client.Connect(g_hostbuf,g_userbuf,g_passbuf);
   return true;
+}
+
+static void update_auto_reconnect()
+{
+  const double now=ImGui::GetTime();
+  g_auto_reconnect.observe(g_client.GetStatus(),now);
+  if (g_hostbuf[0] && g_auto_reconnect.begin_retry(now))
+  {
+    g_client.SetWorkDir(g_workdir.c_str());
+    g_client.Connect(g_hostbuf,g_userbuf,g_passbuf);
+  }
 }
 
 static void draw_connection_section()
@@ -448,6 +469,9 @@ static void draw_connection_section()
 
   int st=display_status();
   status_pill(st);
+  bool auto_reconnect=g_auto_reconnect.enabled();
+  if (ImGui::Checkbox("Auto-reconnect",&auto_reconnect))
+    g_auto_reconnect.set_enabled(auto_reconnect,g_client.GetStatus(),ImGui::GetTime());
   ImGui::Spacing();
 
   if (st == NJClient::NJC_STATUS_CANTCONNECT || st == NJClient::NJC_STATUS_INVALIDAUTH)
@@ -484,7 +508,11 @@ static void draw_connection_section()
     ImGui::Text("user:  %s",g_client.GetUser());
     ImGui::Text("host:  %s",g_client.GetHostName());
     ImGui::Spacing();
-    if (ImGui::Button("Disconnect",ImVec2(-1,0))) g_client.Disconnect();
+    if (ImGui::Button("Disconnect",ImVec2(-1,0)))
+    {
+      g_auto_reconnect.manual_disconnect();
+      g_client.Disconnect();
+    }
   }
 }
 
@@ -908,7 +936,11 @@ static void draw_chat_panel(float width, float height)
       }
     }
     else if (!strncmp(g_chatinput,"/topic ",7))
-      g_client.ChatMessage_Send("TOPIC",g_chatinput+7);
+    {
+      std::string topic_command="topic ";
+      topic_command+=g_chatinput+7;
+      g_client.ChatMessage_Send("ADMIN",topic_command.c_str());
+    }
     else
       g_client.ChatMessage_Send("MSG",g_chatinput);
     g_chatinput[0]=0;
@@ -925,6 +957,8 @@ static void draw_chat_panel(float width, float height)
 
 void ui_draw()
 {
+  update_auto_reconnect();
+
   // Note: use DisplaySize rather than the main viewport's WorkPos/WorkSize -
   // without ImGuiConfigFlags_ViewportsEnable the work rect is never updated.
   ImGuiIO &io=ImGui::GetIO();
@@ -1044,6 +1078,7 @@ void ui_reset()
   g_sidebarw=318.0f;
   g_chatw=372.0f;
   g_localh=0.0f;
+  g_auto_reconnect.reset();
 }
 
 NJClient *ui_client()
@@ -1104,6 +1139,16 @@ void ui_set_workdir(const char *dir)
 {
   g_workdir=(dir && *dir) ? dir : "ninjam-audio";
   g_client.SetWorkDir(g_workdir.c_str());
+}
+
+void ui_set_auto_reconnect(bool enabled)
+{
+  g_auto_reconnect.set_enabled(enabled,g_client.GetStatus(),0.0);
+}
+
+bool ui_auto_reconnect_enabled()
+{
+  return g_auto_reconnect.enabled();
 }
 
 bool ui_try_connect()

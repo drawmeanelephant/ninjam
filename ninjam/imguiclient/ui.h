@@ -44,6 +44,8 @@ void ui_set_audio_status(bool noaudio, bool running, int srate, int innch, int o
 // connection form state
 void ui_set_connect_fields(const char *host, const char *user, const char *pass);
 void ui_set_workdir(const char *dir);
+void ui_set_auto_reconnect(bool enabled);
+bool ui_auto_reconnect_enabled();
 bool ui_try_connect();  // starts a connection using the form fields
 const char *ui_connect_host();
 

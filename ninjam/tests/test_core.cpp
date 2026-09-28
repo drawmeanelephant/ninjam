@@ -11,6 +11,7 @@
 
 #include "ninjam/mpb.h"
 #include "ninjam/njmisc.h"
+#include "ninjam/imguiclient/auto_reconnect.h"
 #include "WDL/sha.h"
 #include "WDL/wdlstring.h"
 
@@ -481,6 +482,48 @@ static void test_njmisc()
 }
 
 // ---------------------------------------------------------------------------
+static void test_auto_reconnect()
+{
+  AutoReconnect retry;
+  CHECK(!retry.enabled());
+  retry.set_enabled(true,AutoReconnect::STATUS_DISCONNECTED,0.0);
+  CHECK(!retry.retry_pending()); // do not retry before the first connection
+
+  retry.manual_connect();
+  retry.observe(AutoReconnect::STATUS_CONNECTED,10.0);
+  CHECK(!retry.retry_pending());
+  retry.observe(AutoReconnect::STATUS_CANT_CONNECT,11.0);
+  CHECK(retry.retry_pending());
+  CHECK(retry.seconds_until_retry(11.0)==1);
+  CHECK(!retry.begin_retry(11.9));
+  CHECK(retry.begin_retry(12.0));
+  CHECK(!retry.retry_pending());
+
+  retry.observe(AutoReconnect::STATUS_CANT_CONNECT,12.1);
+  CHECK(retry.retry_pending());
+  CHECK(retry.seconds_until_retry(12.1)==2); // exponential backoff
+
+  retry.manual_disconnect();
+  CHECK(!retry.retry_pending());
+  retry.observe(AutoReconnect::STATUS_DISCONNECTED,20.0);
+  CHECK(!retry.retry_pending()); // manual disconnect stays manual
+
+  retry.manual_connect();
+  retry.observe(AutoReconnect::STATUS_CONNECTED,21.0);
+  retry.observe(AutoReconnect::STATUS_DISCONNECTED,22.0);
+  CHECK(retry.retry_pending());
+  retry.set_enabled(false,AutoReconnect::STATUS_DISCONNECTED,22.0);
+  CHECK(!retry.retry_pending());
+
+  retry.manual_connect();
+  retry.observe(AutoReconnect::STATUS_CONNECTED,23.0);
+  retry.observe(AutoReconnect::STATUS_INVALID_AUTH,24.0);
+  CHECK(!retry.retry_pending());
+  retry.observe(AutoReconnect::STATUS_CANT_CONNECT,25.0);
+  CHECK(!retry.retry_pending()); // never loop on invalid credentials
+}
+
+// ---------------------------------------------------------------------------
 int main()
 {
   test_sha1();
@@ -497,6 +540,7 @@ int main()
   test_mpb_interval_begin();
   test_mpb_interval_write();
   test_njmisc();
+  test_auto_reconnect();
 
   printf("%d checks, %d failures\n",g_checks,g_failures);
   return g_failures ? 1 : 0;
