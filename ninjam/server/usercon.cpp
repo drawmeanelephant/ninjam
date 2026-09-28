@@ -75,6 +75,20 @@ static int is_type_valid(unsigned int t)
 }
 
 
+// Issue #1 (upstream justinfrankel/ninjam#2): incoming chat/topic text was
+// relayed unfiltered, letting control characters (e.g. newlines) make one
+// line masquerade as several and corrupt downstream consumers such as the
+// public server-list scripts. Map chars < 0x20 to space before relaying.
+static void sanitize_relay_text(char *s)
+{
+  if (!s) return;
+  while (*s)
+  {
+    if ((unsigned char)*s < 0x20) *s=' ';
+    s++;
+  }
+}
+
 static void type_to_string(unsigned int t, char *out)
 {
   if (is_type_valid(t))
@@ -1299,7 +1313,9 @@ void User_Group::onChatMessage(User_Connection *con, mpb_chat_message *msg)
       mpb_chat_message newmsg;
       newmsg.parms[0]="MSG";
       newmsg.parms[1]=con->m_username.Get();
-      newmsg.parms[2]=msg->parms[1]; // send leading whitespace
+      WDL_String santext(msg->parms[1]);
+      sanitize_relay_text(santext.Get()); // issue #1: no control chars in relayed chat
+      newmsg.parms[2]=santext.Get(); // send leading whitespace
       Broadcast(newmsg.build());
     }
     int x;
@@ -1329,6 +1345,8 @@ void User_Group::onChatMessage(User_Connection *con, mpb_chat_message *msg)
     }
     else if (msg->parms[1] && *msg->parms[1] && msg->parms[2] && *msg->parms[2])
     {
+      WDL_String santext(msg->parms[2]);
+      sanitize_relay_text(santext.Get()); // issue #1: no control chars in relayed chat
       // send a privmsg to user in parm1, and if they don't
       int x;
       int pmatch = -1;
@@ -1342,7 +1360,7 @@ void User_Group::onChatMessage(User_Connection *con, mpb_chat_message *msg)
           mpb_chat_message newmsg;
           newmsg.parms[0]="PRIVMSG";
           newmsg.parms[1]=con->m_username.Get();
-          newmsg.parms[2]=msg->parms[2];
+          newmsg.parms[2]=santext.Get();
           m_users.Get(x)->Send(newmsg.build());
 
           return;
@@ -1362,7 +1380,7 @@ void User_Group::onChatMessage(User_Connection *con, mpb_chat_message *msg)
         mpb_chat_message newmsg;
         newmsg.parms[0]="PRIVMSG";
         newmsg.parms[1]=con->m_username.Get();
-        newmsg.parms[2]=msg->parms[2];
+        newmsg.parms[2]=santext.Get();
         m_users.Get(pmatch)->Send(newmsg.build());
         return;
       }
@@ -1395,6 +1413,7 @@ void User_Group::onChatMessage(User_Connection *con, mpb_chat_message *msg)
           else
           {
             m_topictext.Set(p);
+            sanitize_relay_text(m_topictext.Get()); // issue #1: store sanitized so all relays stay clean
             mpb_chat_message newmsg;
             newmsg.parms[0]="TOPIC";
             newmsg.parms[1]=con->m_username.Get();
