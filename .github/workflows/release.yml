@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x64
+          - os: macos-latest
+            platform: macos
+          - os: windows-latest
+            platform: windows-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev xorg-dev \
+            libwayland-dev libwayland-bin wayland-protocols libxkbcommon-dev
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release -j 4
+
+      - name: Test
+        run: ctest --test-dir build --build-config Release --output-on-failure
+
+      - name: Package Unix binaries
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          package="ninjam-${version}-${{ matrix.platform }}"
+          mkdir -p "$package"
+          cp build/bin/ninjamsrv build/bin/ninjam-client README.md LICENSE \
+            ninjam/server/example.cfg ninjam/server/license.txt ninjam/server/cclicense.txt "$package/"
+          tar -czf "${package}.tar.gz" "$package"
+
+      - name: Package Windows binaries
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $package = "ninjam-$env:GITHUB_REF_NAME-${{ matrix.platform }}"
+          New-Item -ItemType Directory -Path $package | Out-Null
+          Copy-Item build/bin/Release/ninjamsrv.exe,build/bin/Release/ninjam-client.exe,README.md,LICENSE,ninjam/server/example.cfg,ninjam/server/license.txt,ninjam/server/cclicense.txt -Destination $package
+          Compress-Archive -Path $package -DestinationPath "$package.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: ninjam-${{ github.ref_name }}-${{ matrix.platform }}.*
+          if-no-files-found: error
+
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Package source
+        run: |
+          git archive --format=tar \
+            --prefix="ninjam-${GITHUB_REF_NAME}/" \
+            "$GITHUB_REF_NAME" | gzip -n > "ninjam-${GITHUB_REF_NAME}-source.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-source
+          path: ninjam-${{ github.ref_name }}-source.tar.gz
+          if-no-files-found: error
+
+  upload:
+    needs: [build, source]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Generate checksums
+        working-directory: release-assets
+        run: sha256sum -- *.tar.gz *.zip > SHA256SUMS
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" release-assets/* --repo "$GITHUB_REPOSITORY"

@@ -74,7 +74,6 @@ static int is_type_valid(unsigned int t)
           is_type_char_valid(t);
 }
 
-
 // Issue #1 (upstream justinfrankel/ninjam#2): incoming chat/topic text was
 // relayed unfiltered, letting control characters (e.g. newlines) make one
 // line masquerade as several and corrupt downstream consumers such as the

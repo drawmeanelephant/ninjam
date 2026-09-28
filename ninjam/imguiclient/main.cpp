@@ -23,6 +23,7 @@
 
 #include "ninjam/njclient.h"
 
+#include "auto_reconnect.h"
 #include "audio_engine.h"
 #include "ui.h"
 
@@ -50,6 +51,30 @@ static int g_srate=48000;
 static int g_innch=2, g_outnch=2;
 static bool g_noaudio=false;
 static std::string g_workdir="ninjam-audio";
+
+static bool load_auto_reconnect_preference()
+{
+  FILE *fp=fopen("ninjam-client.ini","r");
+  if (!fp) return false;
+  char line[64];
+  bool enabled=false;
+  while (fgets(line,sizeof(line),fp))
+  {
+    int value=0;
+    if (sscanf(line,"auto_reconnect=%d",&value)==1)
+      enabled=value != 0;
+  }
+  fclose(fp);
+  return enabled;
+}
+
+static void save_auto_reconnect_preference(bool enabled)
+{
+  FILE *fp=fopen("ninjam-client.ini","w");
+  if (!fp) return;
+  fprintf(fp,"auto_reconnect=%d\n",enabled?1:0);
+  fclose(fp);
+}
 
 // ---------------------------------------------------------------------------
 // NJClient callbacks
@@ -159,6 +184,8 @@ int main(int argc, char **argv)
   ImGui::CreateContext();
   ImGui::GetIO().IniFilename=NULL;
   ui_setup_context();
+  bool last_auto_reconnect=load_auto_reconnect_preference();
+  ui_set_auto_reconnect(last_auto_reconnect);
 
   ImGui_ImplGlfw_InitForOpenGL(g_window,true);
   ImGui_ImplOpenGL3_Init("#version 150");
@@ -187,6 +214,12 @@ int main(int argc, char **argv)
     ImGui::NewFrame();
 
     ui_draw();
+    bool auto_reconnect=ui_auto_reconnect_enabled();
+    if (auto_reconnect != last_auto_reconnect)
+    {
+      last_auto_reconnect=auto_reconnect;
+      save_auto_reconnect_preference(auto_reconnect);
+    }
 
     // keep the window title in sync with the connection state
     int st=client->GetStatus();

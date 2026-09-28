@@ -44,6 +44,58 @@ See `ninjam/server/example.cfg` for the configuration reference (ports, user
 accounts, ACLs, anonymous access, recording archives). Users named
 `anonymous` or `anonymous:<tag>` join through the anonymous policy.
 
+## Server sizing and deployment
+
+The server relays compressed audio intervals; clients encode, decode and mix
+audio. Server CPU, memory and network use therefore depend mainly on concurrent
+users, active channels, channel bitrates and the number of recipients. `MaxUsers`
+limits concurrent users, and `MaxChannels <registered> [anonymous]` limits the
+channels each user may send (up to the built-in limit of 32). Start with limits
+that match the session instead of allowing more channels than participants need.
+
+As a rough community-reported starting point, one upstream report describes
+1 vCPU and 1 GB of RAM as comfortable for about four clients. Treat that as an
+anecdote, not a sizing guarantee: this repository's end-to-end test checks a
+two-client session, not server load. Test with the expected number of users,
+channels and bitrates before relying on a deployment estimate.
+
+The server listens on TCP port 2049 by default. Set `Port` in the server
+configuration or pass `-port <port>` to override it, then allow that TCP port
+through the host firewall and any network firewall in front of the server.
+
+For a headless Linux deployment, install the built `ninjamsrv` binary and its
+configuration, create a dedicated service account, and create writable log or
+archive directories as needed. For example, with the paths adjusted to your
+installation:
+
+```ini
+# /etc/systemd/system/ninjamsrv.service
+[Unit]
+Description=NINJAM server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ninjam
+Group=ninjam
+WorkingDirectory=/var/lib/ninjam
+ExecStart=/opt/ninjam/bin/ninjamsrv /etc/ninjam/server.cfg -logfile /var/log/ninjam/server.log
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/ninjam /var/log/ninjam
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Ensure the service account can read the config and any referenced license or
+MOTD files, and can write to the configured log and archive paths. Then run
+`systemctl daemon-reload`, `systemctl enable --now ninjamsrv`, and inspect
+`systemctl status ninjamsrv` or `journalctl -u ninjamsrv`.
+
 ## Running the client
 
 ```sh
@@ -62,6 +114,10 @@ peak-hold with dB ticks, and Enter in any connection field connects.
 * Chat supports `/msg <user> <text>` and `/topic <text>`.
 * Received audio is decoded to your output; recordings can be kept as
   `.ogg` (+ `.wav`) under the work directory.
+* **Auto-reconnect** is optional, toggled in the Connection panel and saved to
+  `ninjam-client.ini` in the directory where the client starts. It retries
+  unexpected disconnects with exponential backoff; clicking Disconnect does
+  not retry.
 
 ## Tree map
 

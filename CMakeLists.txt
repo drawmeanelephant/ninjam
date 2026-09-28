@@ -144,6 +144,14 @@ add_library(ninjam_core STATIC
   ninjam/njclient.cpp
   ninjam/njmisc.cpp
 )
+if(WIN32)
+  target_sources(ninjam_core PRIVATE
+    WDL/win32_utf8.c
+    ninjam/njmisc_win32_stubs.cpp
+  )
+  set_source_files_properties(WDL/win32_utf8.c PROPERTIES
+    COMPILE_DEFINITIONS WDL_WIN32_UTF8_NO_UI_IMPL)
+endif()
 target_link_libraries(ninjam_core PUBLIC ninjam_net ${NINJAM_VORBIS_TARGETS})
 if(MSVC)
   target_compile_options(ninjam_core PRIVATE /W3)
