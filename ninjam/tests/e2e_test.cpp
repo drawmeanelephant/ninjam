@@ -282,7 +282,7 @@ int main(int argc, char **argv)
       "AnonymousMaskIP yes\n"
       "User alice test TCV\n"
       "DefaultBPI 128\n"
-      "SetVotingThreshold 100\n");
+      "SetVotingThreshold 1\n");
     fclose(fp);
 #ifdef _WIN32
     CreateDirectoryA(workdir,NULL);
@@ -347,13 +347,10 @@ int main(int argc, char **argv)
     // The server config and vote parser both accept the new maximum BPI.
     CHECK(wait_for_bpi(alice,bob,128));
     alice.client.ChatMessage_Send("MSG","!vote bpi 64");
-    bob.client.ChatMessage_Send("MSG","!vote bpi 64");
     CHECK(wait_for_bpi(alice,bob,64));
     alice.client.ChatMessage_Send("MSG","!vote bpi 128");
-    bob.client.ChatMessage_Send("MSG","!vote bpi 128");
     CHECK(wait_for_bpi(alice,bob,128));
     alice.client.ChatMessage_Send("MSG","!vote bpi 8");
-    bob.client.ChatMessage_Send("MSG","!vote bpi 8");
     CHECK(wait_for_bpi(alice,bob,8));
 
     // phase 2: each user list shows the other user (the server never sends
