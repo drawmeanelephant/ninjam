@@ -345,7 +345,7 @@ int mpb_server_userinfo_change_notify::parse_get_rec(int offs, int *isActive, in
   *channelid=(int)*hdrbuf++;
   *volume=(int)*hdrbuf++;
   *volume |= ((int)*hdrbuf++)<<8;
-  *pan = (int) *hdrbuf++;
+  *pan = (int)(signed char)*hdrbuf++; // pan is -128..127
   *flags = (int) *hdrbuf++;
 
   *username = unp;
@@ -742,7 +742,7 @@ int mpb_client_set_channel_info::parse_get_rec(int offs, const char **chname, sh
     *volume|=((int)p[1])<<8;
   }
   else *volume=0;
-  if (mpisize>2) *pan=(int)p[2];
+  if (mpisize>2) *pan=(int)(signed char)p[2]; // pan is -128..127
   else *pan=0;
   if (mpisize>3) *flags=(int)p[3];
   else *flags=0;

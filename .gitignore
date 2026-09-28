@@ -1,0 +1,17 @@
+# build output
+build/
+cmake-build-*/
+
+# runtime state
+imgui.ini
+
+# OS / tooling junk
+.DS_Store
+.freebuff/
+*.log
+
+# session artifacts
+ui-view.html
+
+# 2005-era source drops and tarballs: local history only, not published
+clients/
