@@ -1,24 +1,27 @@
 name: Release
 
+# Cuts a release whenever a v* tag is pushed: builds all three platforms,
+# runs the test suite, packages binaries + source tarball, generates
+# SHA256SUMS and attaches everything to the GitHub Release for the tag.
+#
+# Run it manually (workflow_dispatch) for dry runs: dispatch builds package
+# and verify everything, but never publish a release — grab the artifacts
+# from the workflow run page.
 on:
-  release:
-    types: [published]
+  push:
+    tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   build:
+    name: Build + package (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            platform: linux-x64
-          - os: macos-latest
-            platform: macos
-          - os: windows-latest
-            platform: windows-x64
+        os: [macos-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -30,60 +33,108 @@ jobs:
           sudo apt-get install -y libgl1-mesa-dev xorg-dev \
             libwayland-dev libwayland-bin wayland-protocols libxkbcommon-dev
 
+      - name: Determine release version
+        id: ver
+        shell: bash
+        run: |
+          # Tag push: v0.1.0 -> 0.1.0. workflow_dispatch dry run: the project
+          # version from CMakeLists.txt, suffixed -dryrun so the artifacts
+          # can't be mistaken for a real release.
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$(grep -E '^[[:space:]]*VERSION [0-9]+\.[0-9]+' CMakeLists.txt | head -n 1 | awk '{print $2}')-dryrun"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build --config Release -j 4
 
+      # A release with failing tests ships nothing.
       - name: Test
         run: ctest --test-dir build --build-config Release --output-on-failure
 
-      - name: Package Unix binaries
-        if: runner.os != 'Windows'
+      - name: Package
         shell: bash
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME}"
-          package="ninjam-${version}-${{ matrix.platform }}"
-          mkdir -p "$package"
-          cp build/bin/ninjamsrv build/bin/ninjam-client README.md LICENSE \
-            ninjam/server/example.cfg ninjam/server/license.txt ninjam/server/cclicense.txt "$package/"
-          tar -czf "${package}.tar.gz" "$package"
-
-      - name: Package Windows binaries
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $package = "ninjam-$env:GITHUB_REF_NAME-${{ matrix.platform }}"
-          New-Item -ItemType Directory -Path $package | Out-Null
-          Copy-Item build/bin/Release/ninjamsrv.exe,build/bin/Release/ninjam-client.exe,README.md,LICENSE,ninjam/server/example.cfg,ninjam/server/license.txt,ninjam/server/cclicense.txt -Destination $package
-          Compress-Archive -Path $package -DestinationPath "$package.zip"
+          case "$RUNNER_OS" in
+            Windows)
+              case "$PROCESSOR_ARCHITECTURE" in
+                ARM64) arch=arm64 ;;
+                *)     arch=x64 ;;
+              esac ;;
+            *)
+              case "$(uname -m)" in
+                x86_64)        arch=x64 ;;
+                arm64|aarch64) arch=arm64 ;;
+                *)             arch="$(uname -m)" ;;
+              esac ;;
+          esac
+          name="ninjam-${VERSION}-$(echo "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')-${arch}"
+          echo "artifact=${name}.zip" >> "$GITHUB_ENV"
+          mkdir "$name"
+          # MSVC is a multi-config generator, so the executables land one
+          # level deeper than on the other runners.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp build/bin/Release/ninjamsrv.exe build/bin/Release/ninjam-client.exe "$name/"
+          else
+            cp build/bin/ninjamsrv build/bin/ninjam-client "$name/"
+          fi
+          cp README.md LICENSE "$name/"
+          cd "$name"
+          # Archive contents at the top level, no wrapper directory.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            7z a -tzip "../${name}.zip" ninjamsrv.exe ninjam-client.exe README.md LICENSE
+          else
+            zip "../${name}.zip" ninjamsrv ninjam-client README.md LICENSE
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
-          name: release-${{ matrix.platform }}
-          path: ninjam-${{ github.ref_name }}-${{ matrix.platform }}.*
+          name: bins-${{ matrix.os }}
+          path: ${{ env.artifact }}
           if-no-files-found: error
 
   source:
+    name: Source tarball
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Package source
+
+      - name: Determine release version
+        id: ver
         run: |
-          git archive --format=tar \
-            --prefix="ninjam-${GITHUB_REF_NAME}/" \
-            "$GITHUB_REF_NAME" | gzip -n > "ninjam-${GITHUB_REF_NAME}-source.tar.gz"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$(grep -E '^[[:space:]]*VERSION [0-9]+\.[0-9]+' CMakeLists.txt | head -n 1 | awk '{print $2}')-dryrun"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Package source tarball
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          # gzip -n keeps the tarball deterministic for a given commit.
+          git archive --format=tar --prefix="ninjam-${VERSION}/" HEAD \
+            | gzip -n > "ninjam-${VERSION}-src.tar.gz"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: release-source
-          path: ninjam-${{ github.ref_name }}-source.tar.gz
+          name: src-tarball
+          path: ninjam-*-src.tar.gz
           if-no-files-found: error
 
-  upload:
+  release:
+    name: Checksums + GitHub release
     needs: [build, source]
     runs-on: ubuntu-latest
     permissions:
@@ -91,12 +142,29 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: release-assets
+          path: dist
           merge-multiple: true
-      - name: Generate checksums
-        working-directory: release-assets
-        run: sha256sum -- *.tar.gz *.zip > SHA256SUMS
-      - name: Upload release assets
+
+      - name: Generate SHA256SUMS and verify
+        working-directory: dist
+        run: |
+          rm -f SHA256SUMS
+          sha256sum -- * > SHA256SUMS
+          sha256sum --check SHA256SUMS
+          cat SHA256SUMS
+
+      # Dry runs (workflow_dispatch) intentionally stop here: every artifact
+      # plus SHA256SUMS is available on the workflow run page.
+      - name: Create the release and attach all assets
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" release-assets/* --repo "$GITHUB_REPOSITORY"
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            # Re-run against a release that already exists: replace its assets.
+            gh release upload "$tag" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$tag" dist/* --repo "$GITHUB_REPOSITORY" \
+              --title "NINJAM revival ${tag}" --generate-notes
+          fi
