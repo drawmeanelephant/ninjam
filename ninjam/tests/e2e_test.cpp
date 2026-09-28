@@ -133,6 +133,19 @@ static bool wait_for_bpi(TestClient &a, TestClient &b, int bpi, int timeout_seco
   return false;
 }
 
+static bool wait_for_chat(TestClient &a, TestClient &b, const char *text, int timeout_seconds=5)
+{
+  auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(timeout_seconds);
+  while (std::chrono::steady_clock::now() < deadline)
+  {
+    pump(a);
+    pump(b);
+    if (chat_contains(a,text) || chat_contains(b,text)) return true;
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // audio pumping
 // ---------------------------------------------------------------------------
@@ -252,6 +265,23 @@ static void kill_server(e2e_proc_t proc)
 #endif
 }
 
+static bool write_test_server_config(const char *path, int default_bpi)
+{
+  FILE *fp=fopen(path,"w");
+  if (!fp) return false;
+  fprintf(fp,
+    "MaxUsers 10\n"
+    "MaxChannels 8 2\n"
+    "AnonymousUsers multi\n"
+    "AnonymousUsersCanChat yes\n"
+    "AnonymousMaskIP yes\n"
+    "User alice test TCV\n"
+    "DefaultBPI %d\n"
+    "SetVotingThreshold 1\n",default_bpi);
+  fclose(fp);
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -271,25 +301,16 @@ int main(int argc, char **argv)
   const char *cfgpath="ninjam_e2e.cfg";
   const char *logpath="ninjam_e2e_server.log";
   const char *workdir="ninjam_e2e_work";
+  if (!write_test_server_config(cfgpath,128))
   {
-    FILE *fp=fopen(cfgpath,"w");
-    if (!fp) { printf("cannot write %s\n",cfgpath); return 2; }
-    fprintf(fp,
-      "MaxUsers 10\n"
-      "MaxChannels 8 2\n"
-      "AnonymousUsers multi\n"
-      "AnonymousUsersCanChat yes\n"
-      "AnonymousMaskIP yes\n"
-      "User alice test TCV\n"
-      "DefaultBPI 128\n"
-      "SetVotingThreshold 1\n");
-    fclose(fp);
-#ifdef _WIN32
-    CreateDirectoryA(workdir,NULL);
-#else
-    mkdir(workdir,0700);
-#endif
+    printf("cannot write %s\n",cfgpath);
+    return 2;
   }
+#ifdef _WIN32
+  CreateDirectoryA(workdir,NULL);
+#else
+  mkdir(workdir,0700);
+#endif
 
   int port=pick_free_port();
   if (!port) { printf("could not pick a free port\n"); return 2; }
@@ -347,10 +368,46 @@ int main(int argc, char **argv)
     // The server config and vote parser both accept the new maximum BPI.
     CHECK(wait_for_bpi(alice,bob,128));
     alice.client.ChatMessage_Send("MSG","!vote bpi 64");
-    CHECK(wait_for_bpi(alice,bob,64));
+    CHECK(wait_for_chat(alice,bob,"setting BPI to 64"));
     alice.client.ChatMessage_Send("MSG","!vote bpi 128");
-    CHECK(wait_for_bpi(alice,bob,128));
+    CHECK(wait_for_chat(alice,bob,"setting BPI to 128"));
     alice.client.ChatMessage_Send("MSG","!vote bpi 8");
+    CHECK(wait_for_chat(alice,bob,"setting BPI to 8"));
+
+    // Start a fresh session at a normal interval length for the audio roundtrip.
+    kill_server(srv);
+    srv=E2E_BAD_PROC;
+    alice.client.Disconnect();
+    bob.client.Disconnect();
+    CHECK(write_test_server_config(cfgpath,8));
+    srv=spawn_server(srvpath,cfgpath,port,logpath);
+    CHECK(srv != E2E_BAD_PROC);
+    bool bpi_test_srv_restarted=false;
+    for (int x = 0; x < 200 && !bpi_test_srv_restarted; x ++)
+    {
+      bpi_test_srv_restarted=port_accepts(port);
+      if (!bpi_test_srv_restarted) std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    CHECK(bpi_test_srv_restarted);
+
+    reconnect.manual_connect();
+    alice.client.Connect(host,"alice","test");
+    bob.client.Connect(host,"anonymous:bob","x");
+    alice_ok=false;
+    bob_ok=false;
+    deadline=std::chrono::steady_clock::now()+std::chrono::seconds(15);
+    while ((!alice_ok || !bob_ok) && std::chrono::steady_clock::now() < deadline)
+    {
+      pump(alice);
+      pump(bob);
+      reconnect.observe(alice.client.GetStatus(),
+        std::chrono::duration<double>(std::chrono::steady_clock::now()-reconnect_clock).count());
+      alice_ok=alice.client.GetStatus() == NJClient::NJC_STATUS_OK;
+      bob_ok=bob.client.GetStatus() == NJClient::NJC_STATUS_OK;
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    CHECK(alice_ok);
+    CHECK(bob_ok);
     CHECK(wait_for_bpi(alice,bob,8));
 
     // phase 2: each user list shows the other user (the server never sends
