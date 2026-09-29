@@ -72,11 +72,36 @@ a fix on this branch. `ctest` runs `ninjam_fuzz_regression`
 
 1. replays every checked-in repro through the same code path, built with
    ASan+UBSan+`DEBUG_TIGHT_ALLOC`, and
-2. runs API-level parser checks (`fuzz/regression_checks.cpp`).
+2. runs API-level parser checks (`fuzz/regression_checks.cpp`), and
+3. accounts for the leak in crash 5 by counting live allocations (see below).
 
 If a fix is reverted, its repro aborts with a sanitizer error and the test
-fails. Verified: with each fix reverted in turn, the suite aborts on that
-crash's repro and the API checks fail; with all fixes in, the suite is green.
+fails. Verified by reverting each fix in turn, one at a time:
+
+| reverted fix | detected by | result |
+|---|---|---|
+| 1 -- auth_user scan | `crash-01-auth-username-oob.bin` | `heap-buffer-overflow` at `mpb.cpp:500`, SIGABRT |
+| 2 -- chat trailing parm | `crash-02-chat-unterminated-parm.bin` | `heap-buffer-overflow` in `WDL_String::Set` (the handler copying the parm), SIGABRT |
+| 3 -- channel_info record | `crash-03-chaninfo-name-oob.bin` | `heap-buffer-overflow` at `mpb.cpp:729`, SIGABRT |
+| 4 -- usermask record | `crash-04-usermask-name-oob.bin` | `heap-buffer-overflow` at `mpb.cpp:630`, SIGABRT |
+| 5 -- lobby notify leak | `fuzz/corpus/crash-05` replay | leak check reports `+9 allocs` instead of `+0`, exit 1 |
+
+With all five fixes in place, the whole `ctest` suite (unit, e2e, fuzz
+regression) is green and all five repros replay with rc=0.
+
+**Crash 5 is a leak, and leaks need a detector.** LeakSanitizer is not
+available in Apple's ASan runtime (`detect_leaks is not supported on this
+platform`), so the check in `fuzz/regression_checks.cpp` overrides global
+`operator new`/`delete` to count live allocations and compares two workloads:
+one client stream carrying a single channel change, and one carrying nine.
+Replaying the nine-message stream costs 9 live `Net_Message`s with the fix
+reverted and 0 with it in. On Linux, where LSan does exist, the same input is a
+hard abort with no extra tooling:
+
+```sh
+ASAN_OPTIONS=detect_leaks=1 ./build/fuzz/ninjam_fuzz \
+    fuzz/corpus/crash-05-lobby-chaninfo-leak.bin -runs=1
+```
 
 Re-check a repro by hand any time:
 
@@ -103,9 +128,15 @@ reports land in `/tmp/ninjam_wire_srv.log`.
 ## Coverage
 
 Coverage-guided (libFuzzer edge counters). Final post-fix verification
-session: 10 min, 4-way fork, **9.4M executions, 0 crashes** at ~3.9k execs/s:
+session (with all five fixes in): 10 min, 4-way fork, **7.8M executions,
+0 crashes** at ~12.7k execs/s aggregate:
 
-- **1003 edges / 3586 features**, corpus of 541 units;
+```text
+#7770799: cov: 1014 ft: 3783 corp: 574 exec/s: 3139 oom/timeout/crash: 0/0/0 time: 614s
+INFO: exiting: 0 time: 614s
+```
+
+- **1014 edges / 3783 features**, corpus of 574 units, no new artifacts filed;
 - per `-print_coverage=1`: all client→server message parsers covered
   (`mpb_client_auth_user`, `mpb_client_set_usermask`,
   `mpb_client_set_channel_info`, `mpb_client_upload_interval_begin/write`,
@@ -119,8 +150,8 @@ accept loop; config parsing is local-file parsing, out of protocol scope.
 
 ## Crash inventory
 
-Found: 4 unique crashes (1617+ fuzzer artifacts dedupe to these).
-All 4 are **fixed on this branch**, each with a checked-in repro and a
+Found: 5 unique bugs (1617+ fuzzer artifacts dedupe to these).
+All 5 are **fixed on this branch**, each with a checked-in repro and a
 regression test. None remain open.
 
 | # | repro | crash site (pre-fix) | root cause | severity | stock-heap server |
@@ -129,6 +160,7 @@ regression test. None remain open.
 | 2 | `crash-02-chat-unterminated-parm.bin` | strlen/strcmp in `onChatMessage` handlers | `mpb_chat_message::parse` returned success with a trailing parm that was **not NUL-terminated inside the message** (e.g. `MSG\0kick`); handlers call `strlen`/`strcmp`/pointer-walk on it | **HIGH** (remote DoS: any connected client crashes the server) | **yes — crashes the stock-heap ASan build** (READ of size 5 past the allocation) |
 | 3 | `crash-03-chaninfo-name-oob.bin` | `mpb_client_set_channel_info::parse_get_rec` | channel-name scan reads past the buffer when the name is unterminated; also allowed up to 2 bytes of overflow when reading volume/pan/flags at record end | LOW–MED (OOB read) | no crash |
 | 4 | `crash-04-usermask-name-oob.bin` | `mpb_client_set_usermask::parse_get_rec` | username scan reads past the buffer when the username is unterminated | LOW–MED (OOB read) | no crash |
+| 5 | `crash-05-lobby-chaninfo-leak.bin` | `User_Connection::Run`, usercon.cpp:649 (lobby branch) | `mpb_server_userinfo_change_notify::build_add_rec()` allocates the class's internal `Net_Message`, and the class never frees it -- `mpb.h` states the caller must call `build()`. The channel-info handler only built+sent the notify outside lobby mode, so in a lobby every `set_channel_info` from any logged-in client leaked one message (~88 bytes + buffer), unbounded and remotely driven | **MED** (remote memory exhaustion: loop the message, grow the server until it dies) | n/a (silent, no crash) |
 
 Evidence (pre-fix, wire-level replay of the checked-in repros, exit code -6 =
 SIGABRT):
@@ -140,16 +172,43 @@ crash-03 vs pre-fix ninjamsrv_asan_tight: DEAD  |  stock-heap build: ALIVE
 crash-04 vs pre-fix ninjamsrv_asan_tight: DEAD  |  stock-heap build: ALIVE
 ```
 
-Post-fix, all four repros replay cleanly on both server builds and in the
-harness (and the full ctest suite — unit, e2e, fuzz regression — passes).
+Crash 5 leaks rather than crashes, so it is measured instead — replaying the
+checked-in repro through the harness, counting live `Net_Message`s afterward:
 
-### The fixes (all in `ninjam/mpb.cpp`)
+```text
+crash-05 with the fix reverted:  +9 live allocations  (one per channel-info message)
+crash-05 with the fix in place:  +0
+```
 
-Bounds-first scan conditions (`while (len>0 && *p)` instead of
-`while (*p && len>0)`) so no read happens past the last message byte; the chat
-parser refuses messages whose trailing parm is not NUL-terminated inside the
-message instead of handing handlers a string that reads past the buffer; the
-channel-info/usermask record iterators validate the record layout before
-reading fields. Valid messages parse to byte-identical results — no protocol
-feature was disabled (the existing unit tests in `ninjam/tests/test_core.cpp`
-cover valid-message parsing and pass unchanged).
+Post-fix, all four parser repros replay cleanly on both server builds and in
+the harness, and the leak repro accounts for 0 leaked messages (and the full
+ctest suite — unit, e2e, fuzz regression — passes).
+
+### The fixes
+
+**Crashes 1–4, all in `ninjam/mpb.cpp`.** Bounds-first scan conditions
+(`while (len>0 && *p)` instead of `while (*p && len>0)`) so no read happens past
+the last message byte; the chat parser refuses messages whose trailing parm is
+not NUL-terminated inside the message instead of handing handlers a string that
+reads past the buffer; the channel-info/usermask record iterators validate the
+record layout before reading fields. Valid messages parse to byte-identical
+results — no protocol feature was disabled (the existing unit tests in
+`ninjam/tests/test_core.cpp` cover valid-message parsing and pass unchanged).
+
+**Crash 5, in `ninjam/server/usercon.cpp`.** Build the notify message once and
+release it when there is nobody to broadcast to, which is what `mpb.h` requires
+of every caller of `build_add_rec()`:
+
+```c
+Net_Message *bmsg=mfmt.build();
+if (bmsg)
+{
+  if (!group->m_is_lobby_mode) group->Broadcast(bmsg,this);
+  else delete bmsg;
+}
+```
+
+`Broadcast()` consumes the message (it addRefs, sends, and releases), so the
+non-lobby path is unchanged; the lobby path — which previously skipped
+`build()` entirely — now releases what `build_add_rec()` allocated. Lobby
+semantics are untouched: no notify is sent in lobby mode, exactly as before.

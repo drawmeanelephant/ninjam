@@ -1,11 +1,15 @@
 /*
-    API-level regression checks for the NINJAM parser bounds fixes.
+    Regression checks for the five bugs the fuzzer found, one per fix.
 
-    Each check documents the malformed message shape that used to trigger an
-    out-of-bounds read and asserts the parser's post-fix observable behavior.
-    These run with or without sanitizers; the sanitizer-backed replay of the
-    checked-in repro files (fuzz/corpus/crash-*.bin) is the second layer that
-    catches reversions the API alone cannot expose.
+    Checks 1-4 assert the post-fix behavior of the message parsers on the
+    malformed shapes that used to read out of bounds, at the API level; they run
+    with or without sanitizers. The sanitizer-backed replay of the checked-in
+    repro files (fuzz/corpus/crash-*.bin) is the layer that catches reversions
+    the API alone cannot expose.
+
+    Check 5 covers the lobby-mode memory leak, which has no API surface: it
+    drives the real connection state machine through the fuzz harness and
+    accounts for what the run failed to release.
 
     Return convention: 0 = passed, nonzero = failed.
 */
@@ -13,9 +17,40 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <new>
+#include <vector>
 
 #include "../ninjam/netmsg.h"
 #include "../ninjam/mpb.h"
+
+// the leak check below drives the real connection state machine through the
+// fuzz harness, which is a separate entry point from the parser API
+extern "C" int LLVMFuzzerTestOneInput(const unsigned char *data, size_t size);
+
+// ---------------------------------------------------------------------------
+// live-allocation counter
+//
+// LeakSanitizer is not available on every platform this suite runs on (Apple's
+// ASan runtime ships without it), so the lobby-mode leak regression is checked
+// by counting live C++ allocations across a workload instead. Net_Message --
+// the object the leak loses -- is allocated with plain new, and the harness
+// tears down its group between runs, so live-count growth is a direct measure
+// of what the run failed to release.
+// ---------------------------------------------------------------------------
+static long g_live_allocs = 0;
+
+void *operator new(size_t n)
+{
+  void *p = malloc(n ? n : 1);
+  if (!p) throw std::bad_alloc();
+  g_live_allocs++;
+  return p;
+}
+void *operator new[](size_t n) { return operator new(n); }
+void operator delete(void *p) noexcept { if (p) { g_live_allocs--; free(p); } }
+void operator delete[](void *p) noexcept { operator delete(p); }
+void operator delete(void *p, size_t) noexcept { operator delete(p); }
+void operator delete[](void *p, size_t) noexcept { operator delete(p); }
 
 static int g_failures;
 
@@ -192,11 +227,100 @@ static int check_usermask()
   return 0;
 }
 
+// ---------------------------------------------------------------------------
+// Crash 5 (memory leak, lobby mode): MESSAGE_CLIENT_SET_CHANNEL_INFO in a
+// lobby-mode group called mpb_server_userinfo_change_notify::build_add_rec(),
+// which allocates the class's internal Net_Message, and then skipped both
+// build() and Broadcast() -- the group is in lobby mode, so there is nobody to
+// notify. mpb.h states the contract plainly ("if you call build_add_rec at
+// all, you must do delete x->build()"), and the class destructor does not free
+// it, so every channel-info message a lobby client sent leaked one message
+// (~88 bytes plus its heap buffer). Unbounded and remotely driven: re-send
+// set_channel_info in a loop and the server grows until it dies.
+//
+// A leak needs a leak detector to be an assertion, so: feed the harness N
+// channel-changing messages in a row (it runs every input against a normal
+// group, a lobby group, and an archiving group) and compare the live
+// allocation growth of a 1-message workload against a 9-message one. With the
+// fix the two are the same; with it reverted, the 9-message workload leaks 8
+// extra Net_Messages and this check fails.
+// ---------------------------------------------------------------------------
+static void append_le32(std::vector<unsigned char> &s, unsigned int v)
+{
+  s.push_back((unsigned char)(v & 0xff));
+  s.push_back((unsigned char)((v >> 8) & 0xff));
+  s.push_back((unsigned char)((v >> 16) & 0xff));
+  s.push_back((unsigned char)((v >> 24) & 0xff));
+}
+
+static void append_frame(std::vector<unsigned char> &s, unsigned char type,
+                         const unsigned char *payload, int len)
+{
+  s.push_back(type);
+  append_le32(s, (unsigned int)len);
+  s.insert(s.end(), payload, payload + len);
+}
+
+// auth_user + N set_channel_info messages, each naming channel 0 differently
+// so every one of them registers as a change (and therefore builds a notify)
+static std::vector<unsigned char> chaninfo_stream(int nchanges)
+{
+  std::vector<unsigned char> s;
+
+  unsigned char auth[33];
+  memset(auth, 0, sizeof(auth));     // the username's NUL lives at auth[24]
+  memset(auth, 0x01, 20);            // passhash
+  memcpy(auth + 20, "anon", 4);      // username + NUL
+  auth[25] = 0x03;                   // caps
+  auth[31] = 0x02;                   // client version 0x00020000
+  append_frame(s, MESSAGE_CLIENT_AUTH_USER, auth, (int)sizeof(auth));
+
+  for (int i = 0; i < nchanges; i++)
+  {
+    char nm[16];
+    snprintf(nm, sizeof(nm), "c%d", i);
+
+    unsigned char rec[32];
+    int n = 0;
+    rec[n++] = 4; rec[n++] = 0;                          // mpisize
+    for (const char *p = nm; *p; p++) rec[n++] = (unsigned char)*p;
+    rec[n++] = 0;                                         // name terminator
+    rec[n++] = 0; rec[n++] = 0;                          // volume
+    rec[n++] = 128;                                       // pan
+    rec[n++] = 0;                                         // flags
+    append_frame(s, MESSAGE_CLIENT_SET_CHANNEL_INFO, rec, n);
+  }
+  return s;
+}
+
+static long live_growth_for(int nchanges)
+{
+  std::vector<unsigned char> stream = chaninfo_stream(nchanges);
+  long before = g_live_allocs;
+  LLVMFuzzerTestOneInput(&stream[0], stream.size());
+  return g_live_allocs - before;
+}
+
+static int check_lobby_chaninfo_leak()
+{
+  live_growth_for(1); // warm up one-time allocations so they are not counted
+
+  long one = live_growth_for(1);
+  long nine = live_growth_for(9);
+
+  // 8 extra channel-info messages must not cost 8 extra live allocations
+  CHECK(nine - one <= 2,
+        "lobby chaninfo: no per-message leak (1 msg: +%ld allocs, 9 msgs: +%ld allocs)",
+        one, nine);
+  return 0;
+}
+
 int run_regression_checks()
 {
   check_auth_user();
   check_chat_message();
   check_channel_info();
   check_usermask();
+  check_lobby_chaninfo_leak();
   return g_failures ? 1 : 0;
 }

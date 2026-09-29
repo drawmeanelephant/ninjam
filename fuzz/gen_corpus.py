@@ -106,5 +106,32 @@ def write_seeds():
         print("wrote %s (%d bytes)" % (path, len(blob)))
 
 
+def lobby_chaninfo_leak_repro() -> bytes:
+    """Repro for crash 5 (memory leak): lobby-mode channel-info notify.
+
+    In a lobby-mode group, User_Connection::Run accumulated the
+    userinfo-change-notify records for a set_channel_info message and then
+    skipped both build() and Broadcast(), so the Net_Message that
+    build_add_rec() allocated was never released -- one leak per message, from
+    any client that can log in. Nine messages, each renaming channel 0, so that
+    every one of them registers as a change and therefore allocates.
+    """
+    out = auth_user()
+    for i in range(9):
+        rec = (struct.pack("<H", 4) + ("c%d" % i).encode() + b"\x00" +
+               struct.pack("<h", 0) + bytes([128, 0]))  # volume, pan, flags
+        out += frame(MSG_CLIENT_SET_CHANNEL_INFO, rec)
+    return out
+
+
+def write_repros():
+    path = os.path.join(os.path.dirname(OUT), "crash-05-lobby-chaninfo-leak.bin")
+    blob = lobby_chaninfo_leak_repro()
+    with open(path, "wb") as f:
+        f.write(blob)
+    print("wrote %s (%d bytes)" % (path, len(blob)))
+
+
 if __name__ == "__main__":
     write_seeds()
+    write_repros()
