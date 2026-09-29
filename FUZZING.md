@@ -102,10 +102,10 @@ reports land in `/tmp/ninjam_wire_srv.log`.
 
 ## Coverage
 
-Coverage-guided (libFuzzer edge counters). Latest session
-(4-way fork, ~20 min total across post-fix rounds, ~3.5k execs/s):
+Coverage-guided (libFuzzer edge counters). Final post-fix verification
+session: 10 min, 4-way fork, **9.4M executions, 0 crashes** at ~3.9k execs/s:
 
-- **989 edges / 3228 features**, corpus of 440 units;
+- **1003 edges / 3586 features**, corpus of 541 units;
 - per `-print_coverage=1`: all client→server message parsers covered
   (`mpb_client_auth_user`, `mpb_client_set_usermask`,
   `mpb_client_set_channel_info`, `mpb_client_upload_interval_begin/write`,
