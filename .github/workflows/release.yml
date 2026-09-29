@@ -153,6 +153,13 @@ jobs:
           sha256sum --check SHA256SUMS
           cat SHA256SUMS
 
+      # Also published as a workflow artifact so dry runs can be audited.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SHA256SUMS
+          path: dist/SHA256SUMS
+          if-no-files-found: error
+
       # Dry runs (workflow_dispatch) intentionally stop here: every artifact
       # plus SHA256SUMS is available on the workflow run page.
       - name: Create the release and attach all assets
