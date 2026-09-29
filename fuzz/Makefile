@@ -3,12 +3,18 @@
 # Targets:
 #   ninjam_fuzz        libFuzzer harness (ASan+UBSan+DEBUG_TIGHT_ALLOC) over the
 #                      real server connection code. This is the discovery engine.
+#   ninjam_fuzz_leakcheck
+#                      same harness, plus per-input allocation accounting, so
+#                      leaks are a discoverable bug class (ASan only reports
+#                      memory-safety errors, and LeakSanitizer is missing from
+#                      Apple's ASan runtime and only runs at process exit).
 #   ninjamsrv_asan     the real server binary with ASan+UBSan (stock WDL heap).
 #   ninjamsrv_asan_tight  the real server with ASan+UBSan and WDL's
 #                      DEBUG_TIGHT_ALLOC (exact-size allocations, so even 1-byte
 #                      overflows land in a sanitizer redzone).
 #   corpus             regenerate the seed corpus (fuzz/corpus/seeds/)
 #   run                one-command unattended fuzzing session
+#   run-leak            same, with leak detection on
 #   replay             re-run every checked-in crash repro through the harness
 #                      (must exit cleanly once the fixes are in place)
 #   clean
@@ -45,12 +51,15 @@ NETLIB = $(ROOT)/WDL/jnetlib
 BUILD = $(ROOT)/build/fuzz
 
 FUZZFLAGS = $(CXXFLAGS) $(SAN) -fsanitize=fuzzer-no-link -DDEBUG_TIGHT_ALLOC
-FUZZLINK  = $(CXXFLAGS) $(SAN)
+# dladdr() (used by the leak-check build to name allocation sites) lives in
+# libSystem on macOS but needs an explicit -ldl on Linux
+FUZZLINK  = $(CXXFLAGS) $(SAN) $(shell uname -s | grep -q Linux && echo -ldl)
 SRVFLAGS  = $(CXXFLAGS) $(SAN)
 
-.PHONY: all ninjam_fuzz ninjamsrv_asan ninjamsrv_asan_tight corpus run replay clean
+.PHONY: all ninjam_fuzz ninjam_fuzz_leakcheck ninjamsrv_asan ninjamsrv_asan_tight \
+        corpus run run-leak replay clean
 
-all: ninjam_fuzz ninjamsrv_asan ninjamsrv_asan_tight
+all: ninjam_fuzz ninjam_fuzz_leakcheck ninjamsrv_asan ninjamsrv_asan_tight
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -79,6 +88,15 @@ FUZZ_OBJS = $(BUILD)/harness.o $(BUILD)/fuzz_mpb.o $(BUILD)/fuzz_netmsg.o \
 
 ninjam_fuzz: $(BUILD) $(FUZZ_OBJS) $(FUZZ_RUNTIME)
 	$(CXX) $(FUZZLINK) -o $(BUILD)/ninjam_fuzz $(FUZZ_OBJS) $(FUZZ_RUNTIME)
+
+# same harness, compiled with the per-input leak accounting enabled
+LEAK_OBJS = $(BUILD)/harness_leak.o $(filter-out $(BUILD)/harness.o,$(FUZZ_OBJS))
+
+ninjam_fuzz_leakcheck: $(BUILD) $(LEAK_OBJS) $(FUZZ_RUNTIME)
+	$(CXX) $(FUZZLINK) -o $(BUILD)/ninjam_fuzz_leakcheck $(LEAK_OBJS) $(FUZZ_RUNTIME)
+
+$(BUILD)/harness_leak.o: harness.cpp
+	$(CXX) $(FUZZFLAGS) -DNINJAM_FUZZ_LEAK_CHECK -c -o $@ $<
 
 $(BUILD)/harness.o: harness.cpp
 	$(CXX) $(FUZZFLAGS) -c -o $@ $<
@@ -127,6 +145,22 @@ run: ninjam_fuzz corpus
 	  -dict=$(ROOT)/fuzz/ninjam.dict \
 	  -fork=$(FUZZ_JOBS) -ignore_crashes=1 -max_len=8192 -rss_limit_mb=4096 \
 	  -max_total_time=$(FUZZ_TIME) -artifact_prefix=$(ROOT)/fuzz/artifacts/ \
+	  -print_final_stats=1
+
+# Leak-hunting session: same coverage-guided run, but every input is executed
+# twice and, if it fails to release the same allocations both times, the input
+# is written to fuzz/artifacts/leaks/leak-<sha1> and the run continues. Filings
+# are deduped by content, so one bug produces one file however often it is
+# re-found. Expect roughly half the throughput: two executions per input.
+LEAK_DIR = $(ROOT)/fuzz/artifacts/leaks
+
+run-leak: ninjam_fuzz_leakcheck corpus
+	mkdir -p $(LEAK_DIR)
+	NINJAM_FUZZ_LEAK_DIR=$(LEAK_DIR) \
+	$(BUILD)/ninjam_fuzz_leakcheck $(ROOT)/fuzz/corpus/run $(ROOT)/fuzz/corpus/seeds \
+	  -dict=$(ROOT)/fuzz/ninjam.dict \
+	  -fork=$(FUZZ_JOBS) -ignore_crashes=1 -max_len=8192 -rss_limit_mb=4096 \
+	  -max_total_time=$(FUZZ_TIME) \
 	  -print_final_stats=1
 
 # Every checked-in repro must run through the harness cleanly (exit 0) once the

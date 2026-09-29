@@ -489,7 +489,11 @@ int User_Connection::Run(User_Group *group, int *wantsleep)
       {
         if (!m_lookup || !OnRunAuth(group))
         {
-          m_netcon.Run();
+          // Run() flushes the send queue, but it can also hand back a message
+          // it just received; that message arrives with no references, so the
+          // caller owns it and must release it or it leaks
+          Net_Message *r=m_netcon.Run();
+          if (r) delete r;
           m_netcon.Kill();
         }
         delete m_lookup;
@@ -509,7 +513,9 @@ int User_Connection::Run(User_Group *group, int *wantsleep)
         bh.errmsg="authorization timeout";
         Send(bh.build());
 
-        m_netcon.Run();
+        // see above: Run() may hand back a received message
+        Net_Message *r=m_netcon.Run();
+        if (r) delete r;
         m_netcon.Kill();
       }
     }
@@ -539,7 +545,11 @@ int User_Connection::Run(User_Group *group, int *wantsleep)
       logText("%s: Refusing user, %s\n",addrbuf,bh.errmsg);
 
       Send(bh.build());
-      m_netcon.Run();
+      // flush the refusal, and release anything Run() picks up off the wire:
+      // a client that follows a bad auth frame with a good one otherwise
+      // leaks a message per refused connection (pre-auth)
+      Net_Message *r=m_netcon.Run();
+      if (r) delete r;
 
       m_netcon.Kill();
       msg->releaseRef();

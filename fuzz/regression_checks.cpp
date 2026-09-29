@@ -1,5 +1,5 @@
 /*
-    Regression checks for the five bugs the fuzzer found, one per fix.
+    Regression checks for the six bugs the fuzzer found, one per fix.
 
     Checks 1-4 assert the post-fix behavior of the message parsers on the
     malformed shapes that used to read out of bounds, at the API level; they run
@@ -7,9 +7,9 @@
     repro files (fuzz/corpus/crash-*.bin) is the layer that catches reversions
     the API alone cannot expose.
 
-    Check 5 covers the lobby-mode memory leak, which has no API surface: it
-    drives the real connection state machine through the fuzz harness and
-    accounts for what the run failed to release.
+    Checks 5 and 6 cover the two memory leaks, which have no API surface: they
+    drive the real connection state machine through the fuzz harness and
+    account for what the run failed to release.
 
     Return convention: 0 = passed, nonzero = failed.
 */
@@ -315,6 +315,41 @@ static int check_lobby_chaninfo_leak()
   return 0;
 }
 
+// ---------------------------------------------------------------------------
+// Crash 6 (memory leak, pre-auth): the refuse path called m_netcon.Run() to
+// flush the refusal, but Run() also hands back the next message it manages to
+// read off the wire, and the return value was discarded -- so a client that
+// sent a bad frame followed by a good one leaked a Net_Message per refused
+// connection, without authenticating at all. Unlike crash 5 this needs no
+// lobby, no channel state and no privileges: eight empty frames are enough.
+// ---------------------------------------------------------------------------
+static std::vector<unsigned char> refused_auth_stream(int npairs)
+{
+  std::vector<unsigned char> s;
+  for (int i = 0; i < npairs; i++)
+    append_frame(s, 0x00, (const unsigned char *)"", 0); // empty, and not an auth frame
+  return s;
+}
+
+static long live_growth_for_stream(const std::vector<unsigned char> &stream)
+{
+  long before = g_live_allocs;
+  LLVMFuzzerTestOneInput(&stream[0], stream.size());
+  return g_live_allocs - before;
+}
+
+static int check_refused_auth_leak()
+{
+  std::vector<unsigned char> stream = refused_auth_stream(8);
+  live_growth_for_stream(stream); // warm up one-time allocations
+
+  long residue = live_growth_for_stream(stream);
+  CHECK(residue == 0,
+        "pre-auth refuse: no leaked message after 8 refused connections "
+        "(+%ld live allocs)", residue);
+  return 0;
+}
+
 int run_regression_checks()
 {
   check_auth_user();
@@ -322,5 +357,6 @@ int run_regression_checks()
   check_channel_info();
   check_usermask();
   check_lobby_chaninfo_leak();
+  check_refused_auth_leak();
   return g_failures ? 1 : 0;
 }

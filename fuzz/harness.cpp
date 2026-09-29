@@ -315,7 +315,11 @@ static void run_pass(const unsigned char *data, size_t size, size_t chunk,
   if (use_archive && ++g_archive_passes % 4096 == 0) rmdir_contents(g_archive_dir);
 }
 
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
+#ifdef NINJAM_FUZZ_LEAK_CHECK
+static long g_live_allocs = 0;
+#endif
+
+static int fuzz_body(const uint8_t *data, size_t size)
 {
   if (size < 1 || size > 1<<20) return 0;
 
@@ -329,8 +333,275 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
   return 0;
 }
 
+// ---------------------------------------------------------------------------
+// leak detection (built with -DNINJAM_FUZZ_LEAK_CHECK; see the ninjam_fuzz_leakcheck
+// target in the Makefile)
+//
+// ASan only catches memory-safety errors. Leaks are a separate bug class, and
+// the usual tool for them -- LeakSanitizer -- is missing from Apple's ASan
+// runtime entirely, and even where it exists it runs once at process exit, so it
+// cannot tell the fuzzer which input leaked. It found crash 5 here only by
+// accident, as a CI failure.
+//
+// This mode accounts for live allocations per input instead. run_pass() tears
+// down its group before returning, so whatever a run fails to release is a net
+// positive residue. Each input is executed twice and only flagged when *both*
+// runs leave the same positive residue, which is what separates a real
+// per-input leak from one-time initialization (that leaves residue on the first
+// run only).
+//
+// A confirmed leak is written to $NINJAM_FUZZ_LEAK_DIR as leak-<sha1>, the
+// same "one file per distinct finding" shape as libFuzzer's crash-<sha1>
+// artifacts, and the run continues. Aborting instead would make every forked
+// job die on the first known leak and the session would never get past its own
+// seed corpus; filing and continuing keeps coverage feedback alive so one run
+// can surface several distinct leaks. Filing stops at $NINJAM_FUZZ_LEAK_MAX
+// (default 20) because a single leaking bug makes thousands of near-duplicate
+// inputs leak.
+// ---------------------------------------------------------------------------
+#ifdef NINJAM_FUZZ_LEAK_CHECK
+
+#include <new>
+#include <dlfcn.h>
+#include "../WDL/sha.h"
+
+#ifdef _WIN32
+#include <direct.h>
+#define FUZZ_MKDIR(p) _mkdir(p)
+#else
+#include <dirent.h>
+#include <sys/stat.h>
+#define FUZZ_MKDIR(p) mkdir(p,0755)
+#endif
+
+// Which code allocated what. A ring of the most recent allocations, so a
+// confirmed finding can name the call sites that are still holding memory --
+// without one, "this input leaks 2 allocations" is a triage dead end.
+// __builtin_return_address is a single instruction; capturing a real backtrace
+// per allocation would cost far more than the run itself.
+#define LEAK_SITE_RING 512
+#define LEAK_SITE_IDX 2048
+static void *g_site_ptr[LEAK_SITE_RING];
+static void *g_site_ra[LEAK_SITE_RING];
+static size_t g_site_size[LEAK_SITE_RING];
+static int g_site_next = 0;
+// direct-mapped pointer -> ring slot, so operator delete can clear the slot
+// without scanning the ring; a stale slot would otherwise be reported as a
+// leak site long after the memory was freed
+static int g_site_index[LEAK_SITE_IDX];
+
+static size_t g_last_alloc_size;
+
+static void note_alloc(void *p, void *ra)
+{
+  int slot = g_site_next;
+  g_site_ptr[slot] = p;
+  g_site_ra[slot] = ra;
+  g_site_size[slot] = g_last_alloc_size;
+  g_site_index[((uintptr_t)p >> 4) % LEAK_SITE_IDX] = slot;
+  g_site_next = (g_site_next + 1) % LEAK_SITE_RING;
+}
+
+static void note_free(void *p)
+{
+  int idx = (int)(((uintptr_t)p >> 4) % LEAK_SITE_IDX);
+  int slot = g_site_index[idx];
+  if (slot >= 0 && slot < LEAK_SITE_RING && g_site_ptr[slot] == p)
+  {
+    g_site_ptr[slot] = 0;
+    g_site_ra[slot] = 0;
+    g_site_size[slot] = 0;
+  }
+}
+
+void *operator new(size_t n)
+{
+  void *p = malloc(n ? n : 1);
+  if (!p) throw std::bad_alloc();
+  g_live_allocs++;
+  g_last_alloc_size = n;
+  note_alloc(p, __builtin_return_address(0));
+  return p;
+}
+void *operator new[](size_t n) { return operator new(n); }
+void operator delete(void *p) noexcept { if (p) { g_live_allocs--; note_free(p); free(p); } }
+void operator delete[](void *p) noexcept { operator delete(p); }
+void operator delete(void *p, size_t) noexcept { operator delete(p); }
+void operator delete[](void *p, size_t) noexcept { operator delete(p); }
+
+// live allocations this input failed to release; also leaves the ring marked at
+// the point the run started, so the finding can name allocation sites from this
+// run rather than from the fuzzer's own bookkeeping
+static long leak_residue(const uint8_t *data, size_t size, int *ring_mark)
+{
+  *ring_mark = g_site_next;
+  long before = g_live_allocs;
+  fuzz_body(data, size);
+  return g_live_allocs - before;
+}
+
+static char g_leak_dir[1024];
+static char g_leak_log[1200];
+static int g_leak_dir_ready = 0;
+static int g_leak_max = 20;
+static int g_leak_capped = 0;
+
+// how many leak-* inputs are already filed; used to keep the cap global across
+// the forked jobs, each of which is a fresh process
+static int count_filed_leaks()
+{
+#ifdef _WIN32
+  return 0; // no cheap directory scan here; the per-process cap applies
+#else
+  DIR *d = opendir(g_leak_dir);
+  if (!d) return 0;
+  int n = 0;
+  struct dirent *e;
+  while ((e = readdir(d)))
+  {
+    if (!strncmp(e->d_name, "leak-", 5)) n++;
+  }
+  closedir(d);
+  return n;
+#endif
+}
+
+static void init_leak_dir()
+{
+  const char *d = getenv("NINJAM_FUZZ_LEAK_DIR");
+  if (!d || !*d) d = "leak-artifacts";
+  lstrcpyn_safe(g_leak_dir, d, sizeof(g_leak_dir));
+  FUZZ_MKDIR(g_leak_dir);
+
+  const char *m = getenv("NINJAM_FUZZ_LEAK_MAX");
+  if (m && *m) g_leak_max = atoi(m);
+
+  // libFuzzer's fork mode swallows everything the forked jobs print, so every
+  // finding is also appended here; `tail -f` on this file is how an unattended
+  // leak hunt is watched.
+  snprintf(g_leak_log, sizeof(g_leak_log), "%s/leaks.log", g_leak_dir);
+  g_leak_dir_ready = 1;
+}
+
+static void report_leak(const char *line)
+{
+  printf("%s", line);
+  fflush(stdout);
+  if (g_leak_dir_ready)
+  {
+    FILE *log = fopen(g_leak_log, "ab");
+    if (log) { fprintf(log, "%s", line); fclose(log); }
+  }
+}
+
+// file the offending input; the sha1 name dedups re-finds of the same input
+static void file_leak(const uint8_t *data, size_t size, long residue, int ring_mark)
+{
+  if (!g_leak_dir_ready) init_leak_dir();
+
+  // One leaking bug makes thousands of near-duplicate inputs leak, so the
+  // number of filed repros is capped (libFuzzer caps leaks for the same
+  // reason). The count is global across forked jobs, which are separate
+  // processes, so a per-process counter would restart at zero on every job and
+  // still fill the disk over a long run. Raise the cap with
+  // NINJAM_FUZZ_LEAK_MAX when hunting for several distinct leaks at once.
+  if (g_leak_max > 0 && !g_leak_capped)
+  {
+    if (count_filed_leaks() >= g_leak_max)
+    {
+      g_leak_capped = 1;
+      char line[256];
+      snprintf(line, sizeof(line),
+               "LEAK: %d repros already filed in %s, not filing further findings "
+               "(raise NINJAM_FUZZ_LEAK_MAX to keep filing)\n", g_leak_max, g_leak_dir);
+      report_leak(line);
+    }
+  }
+  if (g_leak_capped) return;
+
+  WDL_SHA1 sha;
+  sha.add(data, size);
+  unsigned char digest[WDL_SHA1SIZE];
+  sha.result(digest);
+
+  char hex[WDL_SHA1SIZE*2+1], path[1200], line[1400];
+  for (int i = 0; i < WDL_SHA1SIZE; i++) snprintf(hex + i*2, 3, "%02x", digest[i]);
+  snprintf(path, sizeof(path), "%s/leak-%s", g_leak_dir, hex);
+
+  FILE *f = fopen(path, "wb");
+  if (!f)
+  {
+    snprintf(line, sizeof(line),
+             "LEAK: %ld allocation(s) survive replaying this input twice, "
+             "but could not write %s\n", residue, path);
+    report_leak(line);
+    return;
+  }
+  fwrite(data, 1, size, f);
+  fclose(f);
+
+  snprintf(line, sizeof(line),
+           "LEAK: %ld allocation(s) survive replaying this input twice -> %s\n",
+           residue, path);
+  report_leak(line);
+
+  // name the call sites from *this run* that are still holding memory (see
+  // note_alloc); entries from before the run are skipped, and a site is only
+  // listed once however many of its objects survived
+  char site_line[512], seen[16][128];
+  int nseen = 0;
+  for (int i = 0; i < LEAK_SITE_RING && nseen < 16; i++)
+  {
+    int idx = (ring_mark + i) % LEAK_SITE_RING;
+    if (!g_site_ptr[idx] || !g_site_ra[idx]) continue;
+
+    // resolve here rather than storing a backtrace per allocation: this runs
+    // once per finding, and the return address is still a valid code address
+    Dl_info di;
+    char where[160];
+    if (dladdr(g_site_ra[idx], &di) && di.dli_sname)
+      snprintf(where, sizeof(where), "%s", di.dli_sname);
+    else
+      snprintf(where, sizeof(where), "%p", g_site_ra[idx]);
+
+    int dup = 0;
+    for (int s = 0; s < nseen; s++) if (!strcmp(seen[s], where)) dup = 1;
+    if (dup) continue;
+    lstrcpyn_safe(seen[nseen++], where, sizeof(seen[0]));
+    snprintf(site_line, sizeof(site_line), "LEAK:   live allocation %p (%lu bytes) from %s\n",
+             g_site_ptr[idx], (unsigned long)g_site_size[idx], where);
+    report_leak(site_line);
+  }
+}
+
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
+{
+  if (size < 1 || size > 1<<20) return 0;
+
+  int mark = 0;
+  long first = leak_residue(data, size, &mark);
+  if (first <= 0) return 0; // clean, or one-time init (not a per-input leak)
+
+  // same residue on a second, independent execution => a real per-input leak
+  int mark2 = 0;
+  if (leak_residue(data, size, &mark2) == first) file_leak(data, size, first, mark2);
+  return 0;
+}
+
+#else
+
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
+{
+  return fuzz_body(data, size);
+}
+
+#endif
+
 extern "C" int LLVMFuzzerInitialize(int *argc, char ***argv)
 {
   init_archive_dir();
+#ifdef NINJAM_FUZZ_LEAK_CHECK
+  init_leak_dir();
+#endif
   return 0;
 }

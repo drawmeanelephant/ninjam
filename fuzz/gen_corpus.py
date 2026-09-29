@@ -124,12 +124,31 @@ def lobby_chaninfo_leak_repro() -> bytes:
     return out
 
 
+def preauth_refused_auth_leak_repro() -> bytes:
+    """Repro for crash 6 (memory leak, pre-auth): refused-auth flush.
+
+    An empty frame is not MESSAGE_CLIENT_AUTH_USER, so the server takes the
+    refuse path, which called m_netcon.Run() purely to flush the refusal out --
+    but Run() also returns the *next* message it manages to read off the wire,
+    and the return value was discarded. The message behind the bad frame was
+    therefore never queued, never released and never freed. One leaked message
+    per refused connection, from an unauthenticated client; eight pairs so the
+    signal is unmissable.
+    """
+    return frame(0x00, b"") * 8
+
+
 def write_repros():
-    path = os.path.join(os.path.dirname(OUT), "crash-05-lobby-chaninfo-leak.bin")
-    blob = lobby_chaninfo_leak_repro()
-    with open(path, "wb") as f:
-        f.write(blob)
-    print("wrote %s (%d bytes)" % (path, len(blob)))
+    here = os.path.dirname(OUT)
+    for name, blob in (
+            ("crash-05-lobby-chaninfo-leak.bin", lobby_chaninfo_leak_repro()),
+            ("crash-06-preauth-refused-auth-leak.bin",
+             preauth_refused_auth_leak_repro()),
+    ):
+        path = os.path.join(here, name)
+        with open(path, "wb") as f:
+            f.write(blob)
+        print("wrote %s (%d bytes)" % (path, len(blob)))
 
 
 if __name__ == "__main__":

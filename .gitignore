@@ -19,3 +19,4 @@ clients/
 # fuzzer working dirs (fuzz/corpus/seeds + fuzz/corpus/crash-* ARE checked in)
 fuzz/artifacts/
 fuzz/corpus/run/
+leak-artifacts/
