@@ -29,3 +29,45 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --build-config Release --output-on-failure
+
+  # zclient: the Zig client. Builds and runs its unit tests on both platforms;
+  # live audio is compiled only where the backend is available (macOS), and
+  # the fully static Linux binary is cross-built to prove it stays dep-free.
+  zclient:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: zclient
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Verify vendored sources still match their upstream pins
+        run: bash vendor/refresh-vendor.sh --check
+
+      - name: Unit tests
+        run: zig build test --summary all
+
+      - name: Build
+        run: zig build -Doptimize=ReleaseSafe
+
+      - name: Smoke-test the binary
+        run: |
+          ./zig-out/bin/zclient --help
+          WAV=$(ls demo/evidence/*/sample-decoded-peer-1s.wav | head -1)
+          ./zig-out/bin/zclient check-wav "$WAV" --min-rms 0.05
+
+      - name: Static musl build
+        if: runner.os == 'Linux'
+        run: |
+          zig build -Dtarget=x86_64-linux-musl -Doptimize=ReleaseSafe -Dlive=false --prefix zig-out-musl
+          file zig-out-musl/bin/zclient
+          file zig-out-musl/bin/zclient | grep -q 'statically linked'
