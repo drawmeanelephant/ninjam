@@ -12,6 +12,53 @@ endif()
 
 add_test(NAME ninjam_tests COMMAND ninjam_tests)
 
+# ---------------------------------------------------------------------------
+# Fuzz-crash regression: replays every checked-in fuzzer crash repro
+# (fuzz/corpus/crash-*.bin) through the real server connection code, plus
+# API-level parser checks. Built with ASan+UBSan and WDL's DEBUG_TIGHT_ALLOC
+# (exact-size heap allocations) so a reverted parse-bounds fix aborts on its
+# repro and the test fails. Without sanitizer support the API checks still run.
+# ---------------------------------------------------------------------------
+if(NOT WIN32)
+  include(CheckCXXCompilerFlag)
+  set(CMAKE_REQUIRED_LINK_OPTIONS "-fsanitize=address")
+  check_cxx_compiler_flag("-fsanitize=address" NINJAM_HAS_ASAN)
+  set(CMAKE_REQUIRED_LINK_OPTIONS "-fsanitize=undefined -fno-sanitize-recover=all")
+  check_cxx_compiler_flag("-fsanitize=undefined -fno-sanitize-recover=all" NINJAM_HAS_UBSAN)
+  unset(CMAKE_REQUIRED_LINK_OPTIONS)
+
+  add_executable(ninjam_fuzz_regression
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../fuzz/harness.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../fuzz/replay_main.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../fuzz/regression_checks.cpp
+    ../mpb.cpp
+    ../netmsg.cpp
+    ../server/usercon.cpp
+    ../../WDL/rng.cpp
+    ../../WDL/sha.cpp
+    ../../WDL/jnetlib/util.cpp
+  )
+  if(NINJAM_HAS_ASAN)
+    target_compile_options(ninjam_fuzz_regression PRIVATE -fsanitize=address)
+    target_link_options(ninjam_fuzz_regression PRIVATE -fsanitize=address)
+  endif()
+  if(NINJAM_HAS_UBSAN)
+    target_compile_options(ninjam_fuzz_regression PRIVATE -fsanitize=undefined -fno-sanitize-recover=all)
+    target_link_options(ninjam_fuzz_regression PRIVATE -fsanitize=undefined -fno-sanitize-recover=all)
+  endif()
+  if(NOT NINJAM_HAS_ASAN)
+    message(STATUS "sanitizers unavailable: ninjam_fuzz_regression will run API checks only")
+  endif()
+  target_compile_definitions(ninjam_fuzz_regression PRIVATE DEBUG_TIGHT_ALLOC)
+  if(MSVC)
+    target_compile_options(ninjam_fuzz_regression PRIVATE /W3)
+  else()
+    target_compile_options(ninjam_fuzz_regression PRIVATE -Wall -Wno-reorder)
+  endif()
+  add_test(NAME ninjam_fuzz_regression COMMAND ninjam_fuzz_regression
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../fuzz/corpus")
+endif()
+
 # End-to-end test: boots the real server and drives two headless clients.
 if(NINJAM_BUILD_SERVER)
   add_executable(ninjam_e2e

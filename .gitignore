@@ -15,3 +15,8 @@ ui-view.html
 
 # 2005-era source drops and tarballs: local history only, not published
 clients/
+
+# fuzzer working dirs (fuzz/corpus/seeds + fuzz/corpus/crash-* ARE checked in)
+fuzz/artifacts/
+fuzz/corpus/run/
+leak-artifacts/
