@@ -34,6 +34,7 @@
 #endif
 
 #include "netmsg.h"
+#include "netcond.h"
 
 int Net_Message::parseBytesNeeded()
 {
@@ -92,6 +93,10 @@ int Net_Message::makeMessageHeader(void *data) // makes message header, data sho
 Net_Message *Net_Connection::Run(int *wantsleep)
 {
   if (!m_con || m_error) return 0;
+
+  // release any audio messages whose injected delay has now elapsed, so
+  // they join the normal send queue before it is drained below
+  pumpDelayed();
 
   {
     int s=0,r=0;
@@ -220,10 +225,84 @@ Net_Message *Net_Connection::Run(int *wantsleep)
   return retv;
 }
 
+// m_delayq is kept sorted by (due, arrival seq), so a plain front-pop
+// drains it in exactly the order Send() offered it. Send() also forces due
+// times to be non-decreasing, so the sort is a formality: nothing can
+// overtake anything.
+
+// move every due entry from the front of the delay queue into m_sendq
+void Net_Connection::pumpDelayed()
+{
+  if (m_delayq.empty()) return;
+
+  double now=NJCond::now_ms();
+  size_t n=0;
+  while (n < m_delayq.size() && m_delayq[n].due <= now) n ++;
+  if (!n) return;
+
+  for (size_t x=0; x < n; x ++)
+  {
+    Net_Message *msg=m_delayq[x].msg;
+    if (!msg) continue;
+
+    if (m_sendq.GetSize() < NET_CON_MAX_MESSAGES*(int)sizeof(Net_Message *))
+      m_sendq.Add(&msg,sizeof(Net_Message *));
+    else
+    {
+      m_error=-2;
+      msg->releaseRef();
+    }
+  }
+
+  m_delayq.erase(m_delayq.begin(), m_delayq.begin()+n);
+}
+
+// insert into m_delayq, preserving (due, arrival) order
+void Net_Connection::enqueueDelayed(double due_ms, Net_Message *msg)
+{
+  DelayedMsg d;
+  d.due=due_ms;
+  d.seq=m_delayseq++;
+  d.msg=msg;
+
+  size_t at=m_delayq.size();
+  for (size_t x=0; x < m_delayq.size(); x ++)
+  {
+    if (m_delayq[x].due > d.due) { at=x; break; }
+  }
+  m_delayq.insert(m_delayq.begin()+at, d);
+}
+
 int Net_Connection::Send(Net_Message *msg)
 {
   if (msg)
   {
+    // adverse-conditions injector: drop or hold back audio messages.
+    // Non-audio traffic is never touched.
+    double delay_ms=0.0;
+    if (!NJCond::admit(msg->get_type(), msg->get_size(), &delay_ms))
+    {
+      return 0; // dropped on the floor; the sender never learns
+    }
+    if (delay_ms > 0.0)
+    {
+      // Force the due time to be non-decreasing in Send() order. The
+      // underlying transport is a single ordered TCP stream, so the network
+      // can vary a message's latency but can never deliver a later message
+      // first. Letting each message draw its own random delay would reorder
+      // the audio messages of one interval, which is not a condition any
+      // real network imposes on TCP -- it just scrambles the interval and
+      // looks like codec failure. Clamping instead models what TCP actually
+      // does: a slow message holds up everything queued behind it.
+      double due=NJCond::now_ms() + delay_ms;
+      if (due < m_lastdue) due=m_lastdue;
+      m_lastdue=due;
+
+      msg->addRef();
+      enqueueDelayed(due, msg);
+      return 0;
+    }
+
     msg->addRef();
     if (m_sendq.GetSize() < NET_CON_MAX_MESSAGES*(int)sizeof(Net_Message *))
       m_sendq.Add(&msg,sizeof(Net_Message *));
@@ -298,6 +377,11 @@ int Net_Connection::GetStatus()
 
 Net_Connection::~Net_Connection()
 {
+  // release anything still sitting in the adverse-conditions delay queue
+  for (size_t x=0; x < m_delayq.size(); x ++)
+    if (m_delayq[x].msg) m_delayq[x].msg->releaseRef();
+  m_delayq.clear();
+
   Net_Message **p=(Net_Message **)m_sendq.Get();
   if (p)
   {

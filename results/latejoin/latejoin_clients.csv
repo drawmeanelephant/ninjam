@@ -1,0 +1,5 @@
+idx,name,ppm,is_late,status_ok_s,first_remote_audio_s,first_marker_s,first_marker_from,markers_emitted,markers_skipped,markers_decoded,audio_msgs_seen,audio_msgs_dropped,audio_msgs_delayed
+0,client0,0,0,0.073,20.146,20.111,1,24,0,62,532,0,0
+1,client1,0,0,0.073,20.146,20.111,0,24,0,62,532,0,0
+2,client2,0,0,0.073,20.146,20.111,0,24,0,62,532,0,0
+3,late3,0,1,120.040,128.112,128.079,0,14,0,45,532,0,0

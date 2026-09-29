@@ -1,0 +1,5 @@
+tag=drift8000 duration=660.0s markers=286 clock_rows=18330
+  client 0 ppm=+0 status_ok=0.05s first_audio=20.12s first_marker=20.09s emitted=54 decoded=97 dropped=0/986
+  client 1 ppm=+8000 status_ok=0.10s first_audio=19.91s first_marker=19.95s emitted=55 decoded=88 dropped=0/986
+  client 2 ppm=-8000 status_ok=0.10s first_audio=16.24s first_marker=16.24s emitted=54 decoded=101 dropped=0/986
+  logs: /Users/tbuddy/dev/z/ninjam-001/results/drift8000/drift8000_markers.csv, /Users/tbuddy/dev/z/ninjam-001/results/drift8000/drift8000_clock.csv, /Users/tbuddy/dev/z/ninjam-001/results/drift8000/drift8000_summary.txt, /Users/tbuddy/dev/z/ninjam-001/results/drift8000/drift8000_clients.csv

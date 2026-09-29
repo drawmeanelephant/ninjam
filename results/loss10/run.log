@@ -1,0 +1,5 @@
+tag=loss10 duration=150.0s markers=52 clock_rows=4290
+  client 0 ppm=+0 status_ok=0.05s first_audio=20.11s first_marker=20.09s emitted=12 decoded=15 dropped=22/222
+  client 1 ppm=+0 status_ok=0.05s first_audio=20.11s first_marker=20.09s emitted=12 decoded=18 dropped=22/222
+  client 2 ppm=+0 status_ok=0.05s first_audio=20.11s first_marker=20.09s emitted=12 decoded=19 dropped=22/222
+  logs: /Users/tbuddy/dev/z/ninjam-001/results/loss10/loss10_markers.csv, /Users/tbuddy/dev/z/ninjam-001/results/loss10/loss10_clock.csv, /Users/tbuddy/dev/z/ninjam-001/results/loss10/loss10_summary.txt, /Users/tbuddy/dev/z/ninjam-001/results/loss10/loss10_clients.csv

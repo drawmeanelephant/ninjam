@@ -20,3 +20,6 @@ clients/
 fuzz/artifacts/
 fuzz/corpus/run/
 leak-artifacts/
+
+# interval-model experiment raw logs ARE checked in (they are the evidence)
+!results/**/*.log

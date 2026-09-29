@@ -33,6 +33,7 @@ if(NOT WIN32)
     ${CMAKE_CURRENT_SOURCE_DIR}/../../fuzz/regression_checks.cpp
     ../mpb.cpp
     ../netmsg.cpp
+    ../netcond.cpp
     ../server/usercon.cpp
     ../../WDL/rng.cpp
     ../../WDL/sha.cpp
@@ -72,7 +73,32 @@ if(NINJAM_BUILD_SERVER)
   endif()
   add_test(NAME ninjam_e2e COMMAND ninjam_e2e $<TARGET_FILE:ninjamsrv>)
   set_tests_properties(ninjam_e2e PROPERTIES TIMEOUT 120)
+
+  # Interval-model experiment. Not part of ctest: the interesting runs are
+  # minutes long and are driven by tools/run_interval_lab.sh, which writes
+  # its own results to REPORT.md and results/.
+  add_executable(ninjam_interval_lab
+    interval_lab.cpp
+  )
+  target_link_libraries(ninjam_interval_lab PRIVATE ninjam_core)
+  if(MSVC)
+    target_compile_options(ninjam_interval_lab PRIVATE /W3)
+  else()
+    target_compile_options(ninjam_interval_lab PRIVATE -Wall)
+  endif()
 endif()
+
+# Detector self-test: no server, no network, just the matched filter against
+# a synthetic stream. Keeps the measurement instrument itself honest.
+add_executable(ninjam_probe_selftest
+  probe_selftest.cpp
+)
+if(MSVC)
+  target_compile_options(ninjam_probe_selftest PRIVATE /W3)
+else()
+  target_compile_options(ninjam_probe_selftest PRIVATE -Wall)
+endif()
+add_test(NAME ninjam_probe_selftest COMMAND ninjam_probe_selftest)
 
 # ---------------------------------------------------------------------------
 # Visual regression: renders the GUI client's UI offscreen (software

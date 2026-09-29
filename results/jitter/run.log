@@ -1,0 +1,5 @@
+tag=jitter duration=150.0s markers=66 clock_rows=4287
+  client 0 ppm=+0 status_ok=0.05s first_audio=20.12s first_marker=20.10s emitted=12 decoded=22 dropped=0/222
+  client 1 ppm=+0 status_ok=0.05s first_audio=20.12s first_marker=20.10s emitted=12 decoded=22 dropped=0/222
+  client 2 ppm=+0 status_ok=0.05s first_audio=20.12s first_marker=20.10s emitted=12 decoded=22 dropped=0/222
+  logs: /Users/tbuddy/dev/z/ninjam-001/results/jitter/jitter_markers.csv, /Users/tbuddy/dev/z/ninjam-001/results/jitter/jitter_clock.csv, /Users/tbuddy/dev/z/ninjam-001/results/jitter/jitter_summary.txt, /Users/tbuddy/dev/z/ninjam-001/results/jitter/jitter_clients.csv

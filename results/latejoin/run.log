@@ -1,0 +1,6 @@
+tag=latejoin duration=300.0s markers=231 clock_rows=10238
+  client 0 ppm=+0 status_ok=0.07s first_audio=20.15s first_marker=20.11s emitted=24 decoded=62 dropped=0/532
+  client 1 ppm=+0 status_ok=0.07s first_audio=20.15s first_marker=20.11s emitted=24 decoded=62 dropped=0/532
+  client 2 ppm=+0 status_ok=0.07s first_audio=20.15s first_marker=20.11s emitted=24 decoded=62 dropped=0/532
+  client 3 ppm=+0 status_ok=120.04s first_audio=128.11s first_marker=128.08s emitted=14 decoded=45 dropped=0/532
+  logs: /Users/tbuddy/dev/z/ninjam-001/results/latejoin/latejoin_markers.csv, /Users/tbuddy/dev/z/ninjam-001/results/latejoin/latejoin_clock.csv, /Users/tbuddy/dev/z/ninjam-001/results/latejoin/latejoin_summary.txt, /Users/tbuddy/dev/z/ninjam-001/results/latejoin/latejoin_clients.csv
