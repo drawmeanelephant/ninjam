@@ -1,0 +1,5 @@
+tag=drift6000 duration=660.0s markers=324 clock_rows=19452
+  client 0 ppm=+0 status_ok=0.02s first_audio=16.06s first_marker=16.05s emitted=54 decoded=108 dropped=0/986
+  client 1 ppm=+6000 status_ok=0.02s first_audio=19.93s first_marker=19.94s emitted=55 decoded=108 dropped=0/986
+  client 2 ppm=-6000 status_ok=0.02s first_audio=16.16s first_marker=16.15s emitted=54 decoded=108 dropped=0/986
+  logs: /Users/tbuddy/dev/z/ninjam-001/results/drift6000/drift6000_markers.csv, /Users/tbuddy/dev/z/ninjam-001/results/drift6000/drift6000_clock.csv, /Users/tbuddy/dev/z/ninjam-001/results/drift6000/drift6000_summary.txt, /Users/tbuddy/dev/z/ninjam-001/results/drift6000/drift6000_clients.csv

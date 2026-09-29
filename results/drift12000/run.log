@@ -1,0 +1,5 @@
+tag=drift12000 duration=660.0s markers=322 clock_rows=19488
+  client 0 ppm=+0 status_ok=0.02s first_audio=16.06s first_marker=16.06s emitted=54 decoded=107 dropped=0/986
+  client 1 ppm=+12000 status_ok=0.02s first_audio=19.82s first_marker=19.82s emitted=55 decoded=107 dropped=0/986
+  client 2 ppm=-12000 status_ok=0.02s first_audio=16.26s first_marker=16.25s emitted=54 decoded=108 dropped=0/986
+  logs: /Users/tbuddy/dev/z/ninjam-001/results/drift12000/drift12000_markers.csv, /Users/tbuddy/dev/z/ninjam-001/results/drift12000/drift12000_clock.csv, /Users/tbuddy/dev/z/ninjam-001/results/drift12000/drift12000_summary.txt, /Users/tbuddy/dev/z/ninjam-001/results/drift12000/drift12000_clients.csv

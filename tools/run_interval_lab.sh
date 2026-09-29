@@ -59,6 +59,23 @@ fi
 # drift8000 is not a realistic crystal (8000 ppm = 0.8%); it is here to find
 # the point at which accumulated drift is large enough to move a marker into
 # the neighbouring interval, which is where the interval model should break.
+#
+# drift3000/4000/6000/12000 bisect that threshold (issue #20). A client does
+# not slide off the grid -- its error stays pinned to a whole number of
+# intervals and then jumps -- so the threshold is a PRODUCT of clock error and
+# time, not a rate: a pair slips when ppm_rel * t reaches one interval. Holding
+# the run length fixed and stepping the ppm therefore walks the accumulated
+# error across the threshold, and the slip/no-slip boundary should land at
+#     ppm_threshold = interval_ms / duration_s
+# For the 660 s runs at a 4 s interval that is 6061 ppm relative. Each rung is
+# labelled with the interval fraction it is predicted to accumulate:
+#   3000 -> 0.50 iv   4000 -> 0.66 iv   6000 -> 0.99 iv   8000 -> 1.32 iv
+#   12000 -> 1.98 iv (two whole intervals)
+# Each run also contains a pair at twice the nominal ppm (0:+X:-X makes the
+# 1<-2 pair 2X), so one run yields two rungs of the ladder for free.
+# NOTE the durations do NOT need to scale inversely with ppm, as issue #20
+# assumed: that would hold accumulated drift constant and measure the same
+# point repeatedly instead of finding the boundary.
 # interval2s / interval8s vary only the tempo, to test whether the observed
 # emission-to-playback delay is a fixed number of intervals or a fixed time.
 # Their mark period has to grow with the interval: the lab refuses a mark
@@ -70,6 +87,10 @@ baseline|$DRIFT_SECS||3
 drift50|$DRIFT_SECS|0:50:-50|3
 drift200|$DRIFT_SECS|0:200:-200|3
 drift8000|$DRIFT_SECS|0:8000:-8000|3
+drift3000|$DRIFT_SECS|0:3000:-3000|3
+drift4000|$DRIFT_SECS|0:4000:-4000|3
+drift6000|$DRIFT_SECS|0:6000:-6000|3
+drift12000|$DRIFT_SECS|0:12000:-12000|3
 loss1|$LOSS_SECS||3|--up-loss=1 --down-loss=1
 loss5|$LOSS_SECS||3|--up-loss=5 --down-loss=5
 loss10|$LOSS_SECS||3|--up-loss=10 --down-loss=10
