@@ -76,6 +76,15 @@ ring boundary, so a silent device cannot fake a passing run. A full transcript
 (protocol messages, timings, per-interval decode results) is written to
 `--transcript`.
 
+## Continuous integration
+
+`.github/workflows/ci.yml` has a `zclient` job alongside the C++ matrix: it
+installs Zig 0.16.0, runs `zig build test`, builds the release binary, smoke-
+tests it against a committed evidence WAV, and on Linux cross-builds a static
+musl binary and asserts it is statically linked. macOS exercises the live-audio
+build (miniaudio + Core Audio); Linux builds without it (`-Dlive=false` by
+default there), so no ALSA headers are needed in CI.
+
 ## Layout
 
 ```
@@ -151,6 +160,11 @@ a silence negative control, so a run that passes on silence cannot pass.
 ```sh
 bash demo/run_demo.sh
 ```
+
+Each run writes a timestamped directory; only the newest one is kept under
+version control, and the committed WAVs are 1 s excerpts (plus the silence
+negative control) — enough to show the audio was real without carrying
+recordings in the repo.
 
 ## Limitations
 

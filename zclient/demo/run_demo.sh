@@ -126,6 +126,7 @@ Z=$!
   > "$EVDIR/s2-refpeer.log" 2>&1
 R=$?
 wait $Z
+[ "$R" -eq 0 ] || fail "scenario2: reference client driver exited $R (see $EVDIR/s2-refpeer-report.txt)"
 
 echo "== scenario 3: zclient --live (real device) + reference client core =="
 "$ZCLIENT" join --host 127.0.0.1:$PORT --user alice --pass secret \
@@ -192,7 +193,7 @@ else
   PLAYRMS=$(result_field playback_rms "$S3")
   awk -v r="$PLAYRMS" 'BEGIN{exit !(r>0.05)}' || fail "scenario3: playback energy too low (rms=$PLAYRMS)"
   OVER=$(result_field audio_overruns "$S3"); [ "$OVER" -eq 0 ] || fail "scenario3: $OVER audio ring overruns (dropped audio)"
-  "$ZCLIENT" check-wav "$EVDIR/s3-playback-mix.wav" --min-rms 0.05 | tee -a "$EVDIR/wav-analysis.txt" \
+  "$ZCLIENT" check-wav "$EVDIR/s3-playback-mix.wav" --min-rms 0.05 | sed -e "s|$RUNTIME/||" -e "s|$EVDIR/||" | tee -a "$EVDIR/wav-analysis.txt" \
     || fail "scenario3: playback mix wav below threshold"
   grep -q "REFPEER RESULT ok=1" "$EVDIR/s3-refpeer-report.txt" || fail "scenario3: reference client did not decode the live mic"
   RP=$(grep -o "remote_peak=[0-9.]*" "$EVDIR/s3-refpeer-report.txt" | cut -d= -f2)
@@ -227,28 +228,36 @@ echo "-- WAV energy checks (non-silence assertions) --"
 wavchecks=0
 for f in "$DUMP1"/*.wav "$DUMP2"/*.wav "$DUMP3"/*.wav "$DUMP4"/*.wav "$DUMP5"/*.wav; do
   [ -e "$f" ] || continue
-  OUT=$("$ZCLIENT" check-wav "$f" --min-rms 0.05) || fail "WAV below threshold: $f"
+  # strip the local temp/evidence prefixes so the committed record has no
+  # absolute paths from whoever ran the demo
+  OUT=$("$ZCLIENT" check-wav "$f" --min-rms 0.05 | sed -e "s|$RUNTIME/||" -e "s|$EVDIR/||") || fail "WAV below threshold: $f"
   echo "$OUT" | tee -a "$EVDIR/wav-analysis.txt"
   wavchecks=$((wavchecks+1))
 done
 [ "$wavchecks" -ge 2 ] || fail "expected >=2 decoded WAVs, got $wavchecks"
 
 echo "-- negative control: silence must FAIL the energy check --"
-ffmpeg -y -v error -f lavfi -i anullsrc=r=48000:cl=mono -t 3 "$RUNTIME/silence.wav"
+ffmpeg -y -v error -f lavfi -i anullsrc=r=48000:cl=mono -t 0.5 "$RUNTIME/silence.wav"
 if "$ZCLIENT" check-wav "$RUNTIME/silence.wav" --min-rms 0.05 > /dev/null 2>&1; then
   fail "silence passed the energy check (test would be a lie)"
 fi
 echo "silence correctly rejected (exit $?)"
 
-echo "== evidence -> $EVDIR =="
+echo "== evidence -> $EVDIR (keep only the newest run under version control) =="
+# strip machine-specific absolute paths so the committed record is portable
+for f in "$EVDIR"/*.txt "$EVDIR"/*.log; do
+  [ -e "$f" ] || continue
+  sed -e "s|$ZDIR/|zclient/|g" -e "s|$EVDIR/||g" -e "s|$RUNTIME/||g" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+done
 cp "$EVDIR"/s1-summary-*.txt "$EVDIR"/s2-summary-*.txt "$EVDIR"/s3-summary-*.txt "$EVDIR"/s4-summary-*.txt \
    "$EVDIR"/s2-refpeer-report.txt "$EVDIR"/s3-refpeer-report.txt "$EVDIR"/s4-refpeer-report.txt "$EVDIR/" 2>/dev/null || true
 if command -v ffmpeg >/dev/null 2>&1; then
   first_wav=$(ls "$DUMP2"/*.wav 2>/dev/null | head -1)
-  [ -n "$first_wav" ] && ffmpeg -y -v error -i "$first_wav" -t 5 "$EVDIR/sample-decoded-peer-5s.wav"
-  # keep a short excerpt of the live playback mix rather than the full dump
+  # 1 s excerpts only: the WAVs are evidence that audio was non-silent, not a
+  # recording to listen to, and the full dumps live in the runtime dir anyway
+  [ -n "$first_wav" ] && ffmpeg -y -v error -i "$first_wav" -t 1 "$EVDIR/sample-decoded-peer-1s.wav"
   if [ -f "$EVDIR/s3-playback-mix.wav" ]; then
-    ffmpeg -y -v error -i "$EVDIR/s3-playback-mix.wav" -t 5 "$EVDIR/s3-playback-mix-5s.wav"
+    ffmpeg -y -v error -i "$EVDIR/s3-playback-mix.wav" -t 1 "$EVDIR/s3-playback-mix-1s.wav"
     rm -f "$EVDIR/s3-playback-mix.wav"
   fi
 fi
