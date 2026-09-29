@@ -89,14 +89,25 @@ fails. Verified by reverting each fix in turn, one at a time:
 With all five fixes in place, the whole `ctest` suite (unit, e2e, fuzz
 regression) is green and all five repros replay with rc=0.
 
-**Crash 5 is a leak, and leaks need a detector.** LeakSanitizer is not
-available in Apple's ASan runtime (`detect_leaks is not supported on this
-platform`), so the check in `fuzz/regression_checks.cpp` overrides global
-`operator new`/`delete` to count live allocations and compares two workloads:
-one client stream carrying a single channel change, and one carrying nine.
-Replaying the nine-message stream costs 9 live `Net_Message`s with the fix
-reverted and 0 with it in. On Linux, where LSan does exist, the same input is a
-hard abort with no extra tooling:
+**Crash 5 is a leak, and leaks need a detector.** LeakSanitizer is part of
+ASan on Linux, and it is what first flagged this one: the Linux CI run of the
+suite reported it at process exit, and nothing else in the whole binary:
+
+```text
+Direct leak of 40 byte(s) in 1 object(s) allocated from:
+    #1 mpb_server_userinfo_change_notify::build_add_rec(int, int, short, int, int, char const*, char const*)
+Indirect leak of 12 byte(s) in 1 object(s) allocated from:
+    #1 mpb_server_userinfo_change_notify::build_add_rec(...)
+SUMMARY: AddressSanitizer: 52 byte(s) leaked in 2 allocation(s).
+```
+
+Apple's ASan runtime has no LSan (`detect_leaks is not supported on this
+platform`), so the check in `fuzz/regression_checks.cpp` also accounts for the
+leak without it: it overrides global `operator new`/`delete` to count live
+allocations and compares two workloads, one client stream carrying a single
+channel change and one carrying nine. The nine-message stream costs 9 live
+`Net_Message`s with the fix reverted and 0 with it in — the same verdict LSan
+gives on Linux, on every platform:
 
 ```sh
 ASAN_OPTIONS=detect_leaks=1 ./build/fuzz/ninjam_fuzz \
