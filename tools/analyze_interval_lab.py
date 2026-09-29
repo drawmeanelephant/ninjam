@@ -192,6 +192,41 @@ class Scenario:
             self.resid[p] = d
             self.slips[p] = (max(offsets) - min(offsets)) if offsets else 0
 
+        # First whole-interval slip, per pair, and when it happened. `slips`
+        # above only counts HOW MANY intervals a pair is ever off by; this is
+        # WHEN it first got there, which is what turns the threshold into a
+        # rate. Caveat: the median delay is taken over all markers, so if a
+        # pair sits in each regime for about half the run the reported time
+        # is the midpoint rather than the real crossing. The marker grid is
+        # mark_period seconds, so this is the first observed marker on the far
+        # side of the jump -- an upper bound within one mark period.
+        self.slip_t = {}
+        self.slip_bracket = {}
+        for p in self.pairs:
+            L = self.interval_ms
+            if L != L or L <= 0 or p not in self.delay:
+                continue
+            seq = []
+            for k in self.ks:
+                v = self.by_pair_k.get((p[0], p[1], k))
+                if v:
+                    seq.append((v[0][0],
+                                int(round((v[0][1] - self.delay[p]) / L))))
+            prev = None
+            prev_t = None
+            for t, o in seq:
+                if prev is not None and o != prev:
+                    self.slip_t[p] = t
+                    # A slip is only SEEN at a marker, so the honest reading is
+                    # a bracket: the previous marker's time is a lower bound
+                    # and this one an upper bound. The gap between them is
+                    # whatever the marker grid left, which is not always the
+                    # nominal mark_period -- a slipping pair also drops
+                    # markers, and gaps up to 87 s occur.
+                    self.slip_bracket[p] = (prev_t, t)
+                    break
+                prev, prev_t = o, t
+
         # Per-marker spread of the wrapped residuals: the true alignment error
         # of the interval grid, immune to whole-interval slips.
         self.align_mod = {}
@@ -199,6 +234,12 @@ class Scenario:
             ws = [d[k] for d in self.resid.values() if k in d]
             if len(ws) >= 2:
                 self.align_mod[k] = max(ws) - min(ws)
+
+        # Markers that at least two pairs heard. The LAST marker overall is
+        # often heard by a single pair (one client drops it, or a slip eats it),
+        # and s.align has no entry for such a k -- indexing s.align with
+        # s.ks[-1] used to raise KeyError and take the whole report down.
+        self.align_ks = sorted(self.align)
 
         # Expected vs observed marker decodes. Client l should decode every
         # marker emitted by every other client.
@@ -308,10 +349,10 @@ def main():
     rows = []
     for n in names:
         s = sc[n]
-        if not s.align or not s.drift:
+        if not s.align or not s.drift or not s.align_ks:
             rows.append([n, "no data"] + [""] * 9)
             continue
-        first_k, last_k = s.ks[0], s.ks[-1]
+        first_k, last_k = s.align_ks[0], s.align_ks[-1]
         worst = max(s.drift, key=lambda p: abs(s.drift[p]))
         p = worst
         pred = 0.06 * (s.ppm.get(p[0], 0.0) - s.ppm.get(p[1], 0.0))
@@ -337,9 +378,9 @@ def main():
     print("## 3. Per-pair alignment error, first marker vs last marker\n")
     for n in names:
         s = sc[n]
-        if not s.delay:
+        if not s.delay or not s.align_ks:
             continue
-        first_k, last_k = s.ks[0], s.ks[-1]
+        first_k, last_k = s.align_ks[0], s.align_ks[-1]
         rows = []
         for p in s.pairs:
             d = s.delay[p]
@@ -473,8 +514,57 @@ def main():
                           f"({fmt(median(mine)-median(others))} ms).")
                 print()
 
-    # --- 7. integrity ------------------------------------------------------
-    print("## 7. Log integrity\n")
+    # --- 7. drift threshold ------------------------------------------------
+    print("## 7. Clock-drift threshold for a whole-interval slip\n")
+    print("A drifting client does not slide off the grid: its error stays pinned")
+    print("to a whole number of intervals and then jumps. The threshold is")
+    print("therefore a RATE and not an offset -- what matters is the clock error")
+    print("a pair has accumulated by the time the session ends, not how fast it")
+    print("is running. `accumulated` is the injected relative clock error,")
+    print("ppm_rel * first_slip_t, i.e. the drift a pair had run up at the moment")
+    print("it first slipped. Compare that against one interval (4000 ms here):")
+    print("if the slips all land near one interval, the interval model is what")
+    print("breaks them, and the threshold is predictable from a spec sheet.\n")
+    print("`first slip t` is the first marker observed on the far side of the")
+    print("jump, so it is an upper bound. The previous marker's time is the")
+    print("matching lower bound, and the two are printed together as a bracket.")
+    print("Do NOT read a single slip time as the threshold: the marker gap is")
+    print("not always the nominal mark_period, because a pair that is slipping")
+    print("also drops markers, and gaps of 50-90 s occur. A pair reading well")
+    print("above 1.0 is usually a wide bracket, not a disagreement.\n")
+    print("Pairs that did not start on the 2-interval baseline are excluded from")
+    print("the comparison -- they carry a whole-interval startup offset (see")
+    print("`start iv`) and so cross at 2.0 by the same rule.\n")
+    rows = []
+    for n in names:
+        s = sc[n]
+        if not s.ppm or not any(abs(v) > 0 for v in s.ppm.values()):
+            continue
+        for p in s.pairs:
+            rel = s.ppm.get(p[0], 0.0) - s.ppm.get(p[1], 0.0)
+            br = s.slip_bracket.get(p)
+            iv = s.interval_ms
+            acc = (lambda t: abs(rel) * t / 1000.0) if br else None
+            first = sorted(s.by_pair_k.get((p[0], p[1], k)) for k in [s.ks[0]])[0][0][1] if s.ks else 8020.0
+            start_iv = int(round((first - 8020.0) / iv)) if iv > 0 else 0
+            rows.append([
+                n, f"{p[0]}<-{p[1]}", f"{rel:+g}",
+                fmt(s.delay.get(p, float("nan"))),
+                s.slips.get(p, "n/a"),
+                "%+d" % start_iv,
+                fmt(br[0], 1) if br else "none",
+                fmt(br[1], 1) if br else "none",
+                fmt(acc(br[0]) / iv, 2) if br else "n/a",
+                fmt(acc(br[1]) / iv, 2) if br else "n/a",
+                "yes" if br and start_iv == 0 else ("no" if br else "n/a"),
+            ])
+    print(table(rows, ["scenario", "pair", "ppm rel", "delay ms", "slips",
+                       "start iv", "last aligned s", "first slipped s",
+                       "lo iv", "hi iv", "aligned pair"]))
+    print()
+
+    # --- 8. integrity ------------------------------------------------------
+    print("## 8. Log integrity\n")
     rows = []
     for n in names:
         s = sc[n]
@@ -492,6 +582,11 @@ def main():
     print()
     print("`markers skipped at emit` should be 0: a non-zero value means a marker was")
     print("scheduled into a gap in the client's own sample stream and never sent.\n")
+    print("`peak` saturates at 1.0 (see the clamp in interval_probe.h), so a peak")
+    print("of exactly 1.0000 means the correlation was at or above the clamp, not")
+    print("that the marker was received more cleanly than usual. It shows up on")
+    print("post-slip rows and must not be read as a detection-quality change.")
+    print()
     print("`shadow rows` are duplicate (listener, emitter, k) triples. A Hann template")
     print("aligned half a burst late still correlates about 0.5 with the burst, so")
     print("every marker throws a weak shadow roughly one burst length behind itself.")

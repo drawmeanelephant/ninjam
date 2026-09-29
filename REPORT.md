@@ -25,6 +25,10 @@ wall time is about 64 minutes, almost all of it the 10-11 minute drift runs.
 | max pairwise alignment error, 11 min, +/-200 ppm clock drift | **0.18 ms** (predicted divergence over the run: 132 ms) |
 | accumulated drift, +/-200 ppm, worst pair | **-0.00 ms/min** measured vs **-12.00 ms/min** predicted |
 | where it does break: +/-8000 ppm, 11 min | alignment jumps to **7967 ms**, in **2 whole-interval slips**; residual modulo one interval **49.89 ms** |
+| **slip threshold** | a pair slips when accumulated relative clock error reaches **one whole interval** (see §2.1) |
+| slip threshold, 660 s at a 4 s interval | measured boundary **[6000, 8000] ppm** vs predicted **6061 ppm**; 9 pairs starting aligned bracket it to **0.97-1.07 intervals** (1 outlier at 1.19 from a dropped-marker gap) |
+| slip threshold in usable form | `ppm_rel = interval / duration` = **250 ppm per minute** of session at a 4 s interval |
+| largest accumulated error that did **not** slip / smallest that did | **0.99 iv / 1.32 iv**, 18 pairs, **no exceptions** |
 | alignment error at 1% / 5% / 10% bidirectional message loss | **0.03 / 0.03 / 0.03 ms** - unaffected |
 | markers still decoded at 1% / 5% / 10% loss | **87.5% / 84.7% / 72.2%** |
 | markers still decoded at 40 ms injected jitter | **91.7%**, and those that arrive land within **0.14 ms** of each other |
@@ -69,7 +73,11 @@ Three clients per run, 11 minutes, one marker every 12 s (54 markers per pair).
 | baseline | 0 / 0 | 0.03 | 0.03 | 0.03 | 0 | 0.00 | 0.00 |
 | drift50 | 0 / +50, 0 / -50 | 0.03 | 0.11 | 0.18 | 0 | -0.00 | -3.00 |
 | drift200 | 0 / +200, 0 / -200 | 0.03 | 0.09 | 0.18 | 0 | -0.00 | -12.00 |
+| drift3000 | 0 / +3000, 0 / -3000 | 4000.12 | 4000.16 | 4000.16 | 0 | 0.01 | 360.00 |
+| drift4000 | 0 / +4000, 0 / -4000 | 4000.08 | 7967.25 | 7967.56 | 2 | -811.50 | 480.00 |
+| drift6000 | 0 / +6000, 0 / -6000 | 4000.16 | 7966.53 | 7967.55 | 2 | -1106.57 | 720.00 |
 | drift8000 | 0 / +8000, 0 / -8000 | 4000.05 | 3950.67 | 7967.41 | 2 | -740.68 | 480.00 |
+| drift12000 | 0 / +12000, 0 / -12000 | 4000.00 | 7973.54 | 7973.75 | 2 | -1120.24 | 720.00 |
 
 `align` is the spread across client pairs of the same event, in ms.
 `predicted` is `0.06 * (ppm_listener - ppm_emitter)` ms/min.
@@ -85,6 +93,114 @@ Two things to read off this:
   (2 slips, 7967 ms) and the residual once whole intervals are removed is
   49.89 ms. A client that drifts past half an interval is simply playing the
   neighbouring interval. There is no gradual degradation in between.
+
+### 2.1 The slip threshold is one whole interval of accumulated clock error
+
+The five drift rungs above, plus the sub-interval residuals, locate the
+threshold. What matters is not the drift *rate* but the clock error a pair has
+**accumulated** by the time the session ends: `ppm_rel * duration`. A pair
+slips when that product reaches one interval.
+
+For the 660 s runs at a 4 s interval, each rung lands at a known fraction of an
+interval, and each run also contains a pair at twice the nominal offset
+(`0:+X:-X` makes the 1<-2 pair 2X), so one run yields two rungs:
+
+| scenario | pair | ppm rel | accumulated at run end | slipped? |
+|----------|------|---------|-------------------------|----------|
+| drift200 | 1<-2 | +400 | 0.07 iv | no |
+| drift3000 | 1<-2 | +6000 | 0.99 iv | no |
+| drift4000 | 1<-0 | +4000 | 0.66 iv | no |
+| drift4000 | 1<-2 | +8000 | 1.32 iv | **yes** |
+| drift6000 | 1<-0 | +6000 | 0.99 iv | no |
+| drift6000 | 1<-2 | +12000 | 1.98 iv | **yes** |
+| drift8000 | 1<-0 | +8000 | 1.32 iv | **yes** |
+| drift8000 | 1<-2 | +16000 | 2.64 iv | **yes** |
+| drift12000 | 1<-0 | +12000 | 1.98 iv | **yes** |
+| drift12000 | 1<-2 | +24000 | 3.96 iv | **yes** |
+
+Counting every one of the 18 client pairs whose relative offset is positive and
+which started the session aligned to the 2-interval baseline:
+
+- Largest accumulated error with **no** slip: **0.99 intervals** (three pairs
+  at +6000 ppm).
+- Smallest accumulated error **with** a slip: **1.32 intervals** (three pairs
+  at +8000 ppm).
+- **No exceptions.** Every pair above 1 interval slipped; every pair below did
+  not.
+
+Measuring *when* each slip happens brackets the threshold from both sides. A
+slip is only *observed* at a marker, so the honest measurement is a bracket: the
+accumulated error at the **last marker still aligned** is a lower bound, and the
+accumulated error at the **first marker past the threshold** is an upper bound.
+Every client pair that started the session aligned to the 2-interval baseline:
+
+| scenario | pair | ppm rel | last aligned | lower bound | first slipped | upper bound |
+|----------|------|---------|--------------|-------------|----------------|-------------|
+| drift4000 | 1<-2 | +8000 | t=498.1 | **1.00 iv** | t=514.1 | 1.03 iv |
+| drift6000 | 1<-2 | +12000 | t=330.1 | **0.99 iv** | t=346.0 | 1.04 iv |
+| drift8000 | 1<-0 | +8000 | t=496.2 | **0.99 iv** | t=512.1 | 1.02 iv |
+| drift8000 | 0<-2 | +8000 | t=488.1 | **0.98 iv** | t=528.2 | 1.06 iv |
+| drift8000 | 0<-1 | -8000 | t=500.1 | **1.00 iv** | t=520.2 | 1.04 iv |
+| drift12000 | 1<-0 | +12000 | t=328.1 | **0.98 iv** | t=344.0 | 1.03 iv |
+| drift12000 | 0<-2 | +12000 | t=332.1 | **1.00 iv** | t=348.1 | 1.04 iv |
+| drift12000 | 1<-2 | +24000 | t=162.1 | **0.97 iv** | t=178.0 | 1.07 iv |
+| drift8000 | 1<-2 | +16000 | t=246.1 | **0.98 iv** | t=297.8 | 1.19 iv |
+
+The lower bounds cluster tightly at **0.97-1.00 intervals**; the upper bounds
+are **1.02-1.07** for eight of the nine, with one outlier at 1.19 explained
+below. The threshold is 1.000 intervals, resolved to within one marker period.
+
+Three pairs that slipped are **not** in that table, and the reason matters:
+
+- **`drift8000 1<-2` (+16000 ppm) reads 1.19 iv, not ~1.03.** Its markers
+  k=21..24 were dropped, so the bracket spans a **51.6 s** gap instead of the
+  nominal 12 s. The slip still happened at 1.00; the *observation* of it was
+  just late. Marker gaps in these runs are not uniformly 12 s: the median is
+  12.0 s but the maximum is 87.2 s, because a slipping pair also loses markers.
+  Any single-marker reading is therefore only as good as the gap before it.
+- **Two pairs start a whole interval off before any drift** and so need two
+  intervals of accumulated error to show a transition:
+
+| scenario | pair | ppm rel | last aligned | lower bound | first slipped | upper bound |
+|----------|------|---------|--------------|-------------|----------------|-------------|
+| drift8000 | 2<-1 | -16000 | t=500.1 | 2.00 iv | t=520.4 | 2.08 iv |
+| drift12000 | 2<-1 | -24000 | t=332.0 | 1.99 iv | t=340.2 | 2.04 iv |
+
+  These are the startup-offset pairs described in §8. Their first transition
+  is a *second* boundary crossing relative to where they started, and it lands
+  at exactly 2 intervals as the same one-interval rule predicts.
+- **Some pairs slip back.** Three pairs cross the boundary and later return to
+  the offset they started at (`drift12000 1<-2` goes 0 -> -2 -> -1 -> 0). The
+  offset is not monotonic in accumulated drift, so "slips" is not a one-way
+  ratchet. The first crossing is still the reliable measurement.
+
+So: **9 pairs starting aligned bracket the threshold to 0.97-1.07 intervals, 2
+pairs starting a whole interval off cross at 1.99-2.08, and the 1.19 outlier
+is a dropped-marker artefact, not a disagreement.** Every number above is
+regenerated by `tools/analyze_interval_lab.py` and cross-checked against this
+file by `tools/verify_report_brackets.py`, which fails if the prose and the
+tables disagree.
+
+**The practical form of the result.** For a session of duration `T` at interval
+`L`, a client pair slips when
+
+    ppm_rel_threshold  =  L / T
+
+For a 4 s interval that is 250 ppm per minute of session: a 10-minute jam needs
+2500 ppm relative to break, an hour needs 67 ppm. The measured boundary for the
+660 s runs is bracketed to **[6000, 8000] ppm** against a predicted 6061 ppm.
+A consumer audio interface at 20 ppm would take about 2.8 hours to slip one
+interval against a perfect reference, so for realistic hardware this is not a
+failure mode - which is presumably why the interval model has survived as long
+as it has.
+
+**This contradicts the design assumed in issue #20**, which proposed that run
+durations "scale inversely with ppm". That would hold accumulated drift roughly
+constant and re-measure the same point at every rung instead of finding the
+boundary. Holding duration *fixed* and stepping ppm is what walks the
+accumulated error across the threshold, and it is 4x cheaper here. The clock
+probe still cannot count slips, as #20 warns; the count above comes from the
+marker trace, via a new `slip_t` field in the analyzer.
 
 ## 3. Message loss costs markers, not alignment
 
@@ -210,12 +326,14 @@ listeners' answers to the same event - pairwise, never absolute.
 
 Each of these has a tracking issue.
 
-- **Where exactly does the slip threshold sit?** 8000 ppm slips and 200 ppm
-  does not. The interesting number - the drift at which a client first crosses
-  half an interval - is between them and was not bisected. A sweep at
-  500/1000/2000/4000 ppm would find it. Note the runs need to be long enough
-  to accumulate past the threshold, so duration should scale inversely with
-  ppm. [#20](https://github.com/drawmeanelephant/ninjam/issues/20)
+- **Where exactly does the slip threshold sit?** Answered in §2.1: a pair slips
+  when accumulated relative clock error reaches one whole interval, i.e.
+  `ppm_rel = L / T`. Measured boundary for 660 s at a 4 s interval is
+  [6000, 8000] ppm against a predicted 6061 ppm. Nine pairs that started
+  aligned bracket the threshold to 0.97-1.07 intervals. The issue's suggested
+  design (durations scaling inversely with ppm) was the wrong way round and
+  would have measured the same point repeatedly.
+  [#20](https://github.com/drawmeanelephant/ninjam/issues/20)
 - **The 20 ms residual is attributed to codec and loopback latency but not
   decomposed.** It is suspiciously stable across a 4x change in interval
   length, which suggests a fixed buffer somewhere, but nothing here localises
@@ -232,6 +350,27 @@ Each of these has a tracking issue.
   mid-message. Here a dropped `INTERVAL_WRITE` loses a whole chunk, which is
   the harsher case, so the 72.2% at 10% loss is a lower bound on what
   survives. [#23](https://github.com/drawmeanelephant/ninjam/issues/23)
+- **Some pairs start a whole interval off before any drift accumulates.** This
+  turned up while validating §2.1 and is not drift at all. In every run with
+  offsets of 3000 ppm or more, several client pairs measure 4020 ms instead of
+  8020 ms on their *very first* marker - a full interval of misalignment
+  present at t=0, before a millisecond of clock error has built up. It appears
+  at 3000 ppm and above and not at 200 ppm or below, and which pairs get it
+  is not a simple function of the sign of the offset. The most likely cause is
+  the startup transient: a client whose sample counter runs fast crosses an
+  extra interval boundary while the session is still coming up, and the
+  interval model has no way to express a fractional position, so the error
+  lands on the interval grid. This is a *join-time* quantisation and it is not
+  in the §2.1 threshold numbers, which use only the pairs that start aligned.  It is worth its own experiment: it means
+  a badly-clocked client can be a whole interval out before it has played a
+  note, which is a sharper failure than slow drift.
+  [#25](https://github.com/drawmeanelephant/ninjam/issues/25)
+- **A detector artefact that looks like signal.** `peak` is clamped to 1.0
+  (`interval_probe.h`), and the value 1.0000 appears on exactly the post-slip
+  rows across every slipping pair. It is the correlation saturating, not the
+  marker arriving more cleanly; reading it as improved detection would be
+  wrong. Noted in the analyzer's integrity section so it is not rediscovered as
+  a finding.
 - **Only one client per drift offset.** Every scenario uses a symmetric
   `0:+X:-X` triple, so a systematic per-client bias and a genuine clock
   difference are not separated. An asymmetric set like `0:+37:-211` would.

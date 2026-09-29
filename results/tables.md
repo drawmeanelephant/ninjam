@@ -13,8 +13,12 @@ structure showing through.
 | scenario   | interval s | min delay | median delay | max delay | median delay / interval |
 |------------|------------|-----------|--------------|-----------|-------------------------|
 | baseline   | 4000.00    | 8020.03   | 8020.04      | 8020.06   | 2.005                   |
+| drift12000 | 4000.00    | 4020.05   | 4020.12      | 8019.98   | 1.005                   |
 | drift200   | 4000.00    | 8020.03   | 8020.06      | 8020.08   | 2.005                   |
+| drift3000  | 4000.00    | 4020.05   | 6020.07      | 8020.09   | 1.505                   |
+| drift4000  | 4000.00    | 4020.05   | 6020.06      | 8020.05   | 1.505                   |
 | drift50    | 4000.00    | 8020.02   | 8020.05      | 8020.08   | 2.005                   |
+| drift6000  | 4000.00    | 4020.03   | 4028.58      | 8020.05   | 1.007                   |
 | drift8000  | 4000.00    | 4020.05   | 8020.00      | 8020.04   | 2.005                   |
 | interval2s | 2000.00    | 4020.00   | 4020.01      | 4020.03   | 2.010                   |
 | interval8s | 8000.00    | 16020.03  | 16020.04     | 16020.05  | 2.003                   |
@@ -43,8 +47,12 @@ pair with the largest |drift|. Predicted drift for a pair is
 | scenario   | markers | align first | align last | align max | align mod iv | max slips | worst pair | drift ms/min | predicted |
 |------------|---------|-------------|------------|-----------|--------------|-----------|------------|--------------|-----------|
 | baseline   | 54      | 0.03        | 0.03       | 0.03      | 0.00         | 0         | 0<-1       | 0.00         | 0.00      |
+| drift12000 | 55      | 4000.00     | 7973.54    | 7973.75   | 52.35        | 2         | 0<-2       | -1120.24     | 720.00    |
 | drift200   | 54      | 0.03        | 0.09       | 0.18      | 0.17         | 0         | 2<-0       | -0.00        | -12.00    |
+| drift3000  | 54      | 4000.12     | 4000.16    | 4000.16   | 0.19         | 0         | 1<-2       | 0.01         | 360.00    |
+| drift4000  | 55      | 4000.08     | 7967.25    | 7967.56   | 34.35        | 2         | 1<-2       | -811.50      | 480.00    |
 | drift50    | 54      | 0.03        | 0.11       | 0.18      | 0.19         | 0         | 0<-1       | -0.00        | -3.00     |
+| drift6000  | 55      | 4000.16     | 7966.53    | 7967.55   | 17.15        | 2         | 1<-2       | -1106.57     | 720.00    |
 | drift8000  | 55      | 4000.05     | 3950.67    | 7967.41   | 49.89        | 2         | 1<-0       | -740.68      | 480.00    |
 | interval2s | 12      | 0.03        | 0.03       | 0.03      | 0.00         | 0         | 0<-2       | 0.02         | 0.00      |
 | interval8s | 6       | 0.02        | 0.03       | 0.03      | 0.02         | 0         | 2<-0       | -0.04        | 0.00      |
@@ -72,6 +80,16 @@ see REPORT.md.
 | 2 hears 0 | +0 / +0 | 8020.03 | 8019.99  | 8020.07   | 0.08   | 0.00         | 0     | -0.04        | 0.04        |
 | 2 hears 1 | +0 / +0 | 8020.06 | 8020.02  | 8020.10   | 0.08   | 0.00         | 0     | -0.04        | 0.04        |
 
+### drift12000
+
+| pair      | ppm l/e         | delay   | err @k=1 | err @k=54 | change   | drift ms/min | slips | resid @first | resid @last |
+|-----------|-----------------|---------|----------|-----------|----------|--------------|-------|--------------|-------------|
+| 0 hears 1 | +0 / +12000     | 4020.08 | 4020.00  | 4020.10   | 0.10     | 0.00         | 0     | -0.08        | 0.02        |
+| 0 hears 2 | +0 / -12000     | 8019.98 | 8020.00  | 52.74     | -7967.26 | -1120.24     | 2     | 0.02         | 32.76       |
+| 1 hears 0 | +12000 / +0     | 4038.48 | 8019.97  | 46.51     | -7973.46 | -1113.73     | 2     | -18.51       | 8.03        |
+| 1 hears 2 | +12000 / -12000 | 4020.13 | 8019.98  | 8020.04   | 0.06     | 144.18       | 2     | -0.15        | -0.08       |
+| 2 hears 0 | -12000 / +0     | 4020.05 | 4020.11  | 4019.99   | -0.12    | -0.00        | 0     | 0.06         | -0.06       |
+
 ### drift200
 
 | pair      | ppm l/e     | delay   | err @k=1 | err @k=54 | change | drift ms/min | slips | resid @first | resid @last |
@@ -83,6 +101,28 @@ see REPORT.md.
 | 2 hears 0 | -200 / +0   | 8020.03 | 8020.07  | 8020.03   | -0.04  | -0.00        | 0     | 0.04         | 0.00        |
 | 2 hears 1 | -200 / +200 | 8020.06 | 8020.10  | 8020.06   | -0.04  | -0.00        | 0     | 0.04         | 0.00        |
 
+### drift3000
+
+| pair      | ppm l/e       | delay   | err @k=1 | err @k=54 | change | drift ms/min | slips | resid @first | resid @last |
+|-----------|---------------|---------|----------|-----------|--------|--------------|-------|--------------|-------------|
+| 0 hears 1 | +0 / +3000    | 4020.06 | 4020.06  | 4020.12   | 0.06   | -0.00        | 0     | 0.00         | 0.06        |
+| 0 hears 2 | +0 / -3000    | 8020.06 | 8020.13  | 8020.11   | -0.02  | -0.00        | 0     | 0.06         | 0.04        |
+| 1 hears 0 | +3000 / +0    | 8020.07 | 8020.09  | 8020.11   | 0.02   | 0.01         | 0     | 0.02         | 0.04        |
+| 1 hears 2 | +3000 / -3000 | 8020.09 | 8020.11  | 8020.13   | 0.02   | 0.01         | 0     | 0.02         | 0.04        |
+| 2 hears 0 | -3000 / +0    | 4020.05 | 4020.01  | 4019.97   | -0.04  | 0.00         | 0     | -0.04        | -0.08       |
+| 2 hears 1 | -3000 / +3000 | 4020.08 | 4020.04  | 4020.00   | -0.04  | 0.00         | 0     | -0.04        | -0.08       |
+
+### drift4000
+
+| pair      | ppm l/e       | delay   | err @k=1 | err @k=54 | change   | drift ms/min | slips | resid @first | resid @last |
+|-----------|---------------|---------|----------|-----------|----------|--------------|-------|--------------|-------------|
+| 0 hears 1 | +0 / +4000    | 4020.09 | 4020.02  | 4020.00   | -0.02    | 0.00         | 0     | -0.07        | -0.09       |
+| 0 hears 2 | +0 / -4000    | 8020.04 | 8020.02  | 8020.02   | 0.00     | -0.00        | 0     | -0.02        | -0.02       |
+| 1 hears 0 | +4000 / +0    | 8020.05 | 8020.09  | 8020.09   | 0.00     | -0.00        | 0     | 0.04         | 0.04        |
+| 1 hears 2 | +4000 / -4000 | 8020.02 | 8020.11  | 52.85     | -7967.26 | -811.50      | 2     | 0.08         | 32.82       |
+| 2 hears 0 | -4000 / +0    | 4020.05 | 4020.03  | 4020.05   | 0.02     | -0.00        | 0     | -0.02        | 0.00        |
+| 2 hears 1 | -4000 / +4000 | 4020.08 | 4020.06  | 4020.08   | 0.02     | -0.00        | 0     | -0.02        | 0.00        |
+
 ### drift50
 
 | pair      | ppm l/e   | delay   | err @k=1 | err @k=54 | change | drift ms/min | slips | resid @first | resid @last |
@@ -93,6 +133,17 @@ see REPORT.md.
 | 1 hears 2 | +50 / -50 | 8020.06 | 8020.09  | 8020.00   | -0.08  | -0.00        | 0     | 0.02         | -0.06       |
 | 2 hears 0 | -50 / +0  | 8020.05 | 8020.07  | 8020.07   | 0.00   | -0.00        | 0     | 0.02         | 0.02        |
 | 2 hears 1 | -50 / +50 | 8020.08 | 8020.10  | 8020.10   | 0.00   | -0.00        | 0     | 0.02         | 0.02        |
+
+### drift6000
+
+| pair      | ppm l/e       | delay   | err @k=1 | err @k=54 | change   | drift ms/min | slips | resid @first | resid @last |
+|-----------|---------------|---------|----------|-----------|----------|--------------|-------|--------------|-------------|
+| 0 hears 1 | +0 / +6000    | 4020.08 | 4020.06  | 4020.04   | -0.02    | -0.00        | 0     | -0.02        | -0.04       |
+| 0 hears 2 | +0 / -6000    | 8020.04 | 8020.04  | 8020.02   | -0.02    | -0.00        | 0     | 0.00         | -0.02       |
+| 1 hears 0 | +6000 / +0    | 8020.05 | 8020.11  | 8019.97   | -0.15    | 0.00         | 0     | 0.06         | -0.08       |
+| 1 hears 2 | +6000 / -6000 | 4037.07 | 8020.13  | 53.49     | -7966.64 | -1106.57     | 2     | -16.94       | 16.42       |
+| 2 hears 0 | -6000 / +0    | 4020.03 | 4019.97  | 4019.99   | 0.02     | 0.00         | 0     | -0.06        | -0.04       |
+| 2 hears 1 | -6000 / +6000 | 4020.06 | 4020.00  | 4020.02   | 0.02     | 0.00         | 0     | -0.06        | -0.04       |
 
 ### drift8000
 
@@ -179,8 +230,12 @@ stream, so TCP would turn a dropped packet into latency rather than loss.
 | scenario   | loss up/down | jitter up/down ms | markers emitted | expected decodes | decoded | detection rate | audio msgs seen | dropped | actual drop rate | suspect rows |
 |------------|--------------|-------------------|-----------------|------------------|---------|----------------|-----------------|---------|------------------|--------------|
 | baseline   | 0% / 0%      | 0 / 0             | 162             | 324              | 324     | 100.0%         | 2952            | 0       | 0.00%            | 0            |
+| drift12000 | 0% / 0%      | 0 / 0             | 163             | 326              | 321     | 98.5%          | 2958            | 0       | 0.00%            | 0            |
 | drift200   | 0% / 0%      | 0 / 0             | 162             | 324              | 324     | 100.0%         | 2952            | 0       | 0.00%            | 0            |
+| drift3000  | 0% / 0%      | 0 / 0             | 163             | 326              | 324     | 99.4%          | 2958            | 0       | 0.00%            | 0            |
+| drift4000  | 0% / 0%      | 0 / 0             | 163             | 326              | 324     | 99.4%          | 2958            | 0       | 0.00%            | 0            |
 | drift50    | 0% / 0%      | 0 / 0             | 163             | 326              | 324     | 99.4%          | 2956            | 0       | 0.00%            | 0            |
+| drift6000  | 0% / 0%      | 0 / 0             | 163             | 326              | 324     | 99.4%          | 2958            | 0       | 0.00%            | 0            |
 | drift8000  | 0% / 0%      | 0 / 0             | 163             | 326              | 286     | 87.7%          | 2958            | 0       | 0.00%            | 0            |
 | interval2s | 0% / 0%      | 0 / 0             | 36              | 72               | 72      | 100.0%         | 1332            | 0       | 0.00%            | 0            |
 | interval8s | 0% / 0%      | 0 / 0             | 21              | 42               | 36      | 85.7%          | 324             | 0       | 0.00%            | 0            |
@@ -211,8 +266,12 @@ interval rather than being slightly out of phase.
 | scenario   | pairs | samples | median |skew| | max |skew| raw | p99 wrapped | max wrapped | worst pair | slip rate | drift ms/min |
 |------------|-------|---------|---------------|----------------|-------------|-------------|------------|-----------|--------------|
 | baseline   | 3     | 19485   | 0.00          | 0.00           | 0.00        | 0.00        | 0-1        | 0.00%     | 0.00         |
+| drift12000 | 3     | 19488   | 0.29          | 3999.98        | 0.90        | 0.98        | 0-1        | 4.08%     | 2.53         |
 | drift200   | 3     | 18510   | 0.29          | 3999.98        | 0.90        | 0.98        | 0-1        | 3.70%     | 2.81         |
+| drift3000  | 3     | 19482   | 0.29          | 3999.98        | 0.90        | 0.98        | 0-1        | 4.01%     | 0.40         |
+| drift4000  | 3     | 19470   | 0.29          | 3999.98        | 0.90        | 0.98        | 0-1        | 3.90%     | -0.47        |
 | drift50    | 3     | 18870   | 0.29          | 3999.98        | 0.90        | 0.98        | 0-1        | 4.29%     | 1.97         |
+| drift6000  | 3     | 19452   | 0.29          | 3999.98        | 0.90        | 0.98        | 0-1        | 3.79%     | -3.25        |
 | drift8000  | 3     | 18330   | 0.29          | 3999.98        | 0.90        | 0.98        | 0-1        | 3.75%     | -8.01        |
 | interval2s | 3     | 4422    | 0.00          | 0.00           | 0.00        | 0.00        | 0-1        | 0.00%     | 0.00         |
 | interval8s | 3     | 4425    | 0.00          | 0.00           | 0.00        | 0.00        | 0-1        | 0.00%     | 0.00         |
@@ -241,13 +300,86 @@ Late joiner's fixed delay to existing clients: 8020.03-8020.06 ms.
 Existing clients' delay among themselves: 8020.03-8020.06 ms.
 Late joiner sits -0.004 intervals away from the rest of the session (-0.02 ms).
 
-## 7. Log integrity
+## 7. Clock-drift threshold for a whole-interval slip
+
+A drifting client does not slide off the grid: its error stays pinned
+to a whole number of intervals and then jumps. The threshold is
+therefore a RATE and not an offset -- what matters is the clock error
+a pair has accumulated by the time the session ends, not how fast it
+is running. `accumulated` is the injected relative clock error,
+ppm_rel * first_slip_t, i.e. the drift a pair had run up at the moment
+it first slipped. Compare that against one interval (4000 ms here):
+if the slips all land near one interval, the interval model is what
+breaks them, and the threshold is predictable from a spec sheet.
+
+`first slip t` is the first marker observed on the far side of the
+jump, so it is an upper bound. The previous marker's time is the
+matching lower bound, and the two are printed together as a bracket.
+Do NOT read a single slip time as the threshold: the marker gap is
+not always the nominal mark_period, because a pair that is slipping
+also drops markers, and gaps of 50-90 s occur. A pair reading well
+above 1.0 is usually a wide bracket, not a disagreement.
+
+Pairs that did not start on the 2-interval baseline are excluded from
+the comparison -- they carry a whole-interval startup offset (see
+`start iv`) and so cross at 2.0 by the same rule.
+
+| scenario   | pair | ppm rel | delay ms | slips | start iv | last aligned s | first slipped s | lo iv | hi iv | aligned pair |
+|------------|------|---------|----------|-------|----------|----------------|-----------------|-------|-------|--------------|
+| drift12000 | 0<-1 | -12000  | 4020.08  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift12000 | 0<-2 | +12000  | 8019.98  | 2     | +0       | 332.1          | 348.1           | 1.00  | 1.04  | yes          |
+| drift12000 | 1<-0 | +12000  | 4038.48  | 2     | +0       | 328.1          | 344.0           | 0.98  | 1.03  | yes          |
+| drift12000 | 1<-2 | +24000  | 4020.13  | 2     | +0       | 162.1          | 178.0           | 0.97  | 1.07  | yes          |
+| drift12000 | 2<-0 | -12000  | 4020.05  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift12000 | 2<-1 | -24000  | 4020.11  | 2     | -1       | 332.0          | 340.2           | 1.99  | 2.04  | no           |
+| drift200   | 0<-1 | -200    | 8020.08  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift200   | 0<-2 | +200    | 8020.06  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift200   | 1<-0 | +200    | 8020.05  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift200   | 1<-2 | +400    | 8020.06  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift200   | 2<-0 | -200    | 8020.03  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift200   | 2<-1 | -400    | 8020.06  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift3000  | 0<-1 | -3000   | 4020.06  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift3000  | 0<-2 | +3000   | 8020.06  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift3000  | 1<-0 | +3000   | 8020.07  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift3000  | 1<-2 | +6000   | 8020.09  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift3000  | 2<-0 | -3000   | 4020.05  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift3000  | 2<-1 | -6000   | 4020.08  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift4000  | 0<-1 | -4000   | 4020.09  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift4000  | 0<-2 | +4000   | 8020.04  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift4000  | 1<-0 | +4000   | 8020.05  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift4000  | 1<-2 | +8000   | 8020.02  | 2     | +0       | 498.1          | 514.1           | 1.00  | 1.03  | yes          |
+| drift4000  | 2<-0 | -4000   | 4020.05  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift4000  | 2<-1 | -8000   | 4020.08  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift50    | 0<-1 | -50     | 8020.04  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift50    | 0<-2 | +50     | 8020.02  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift50    | 1<-0 | +50     | 8020.05  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift50    | 1<-2 | +100    | 8020.06  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift50    | 2<-0 | -50     | 8020.05  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift50    | 2<-1 | -100    | 8020.08  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift6000  | 0<-1 | -6000   | 4020.08  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift6000  | 0<-2 | +6000   | 8020.04  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift6000  | 1<-0 | +6000   | 8020.05  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift6000  | 1<-2 | +12000  | 4037.07  | 2     | +0       | 330.1          | 346.0           | 0.99  | 1.04  | yes          |
+| drift6000  | 2<-0 | -6000   | 4020.03  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift6000  | 2<-1 | -12000  | 4020.06  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift8000  | 0<-1 | -8000   | 8020.04  | 1     | +0       | 500.1          | 520.2           | 1.00  | 1.04  | yes          |
+| drift8000  | 0<-2 | +8000   | 8020.04  | 2     | +0       | 488.1          | 528.2           | 0.98  | 1.06  | yes          |
+| drift8000  | 1<-0 | +8000   | 8020.01  | 2     | +0       | 496.2          | 512.1           | 0.99  | 1.02  | yes          |
+| drift8000  | 1<-2 | +16000  | 8019.98  | 2     | +0       | 246.1          | 297.8           | 0.98  | 1.19  | yes          |
+| drift8000  | 2<-0 | -8000   | 4020.05  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift8000  | 2<-1 | -16000  | 4020.06  | 1     | -1       | 500.1          | 520.4           | 2.00  | 2.08  | no           |
+
+## 8. Log integrity
 
 | scenario   | marker rows | unique markers | shadow rows | clock rows | markers skipped at emit | min peak | median peak | max peak |
 |------------|-------------|----------------|-------------|------------|-------------------------|----------|-------------|----------|
 | baseline   | 324         | 324            | 0           | 19485      | 0                       | 0.693    | 0.707       | 0.721    |
+| drift12000 | 322         | 321            | 1           | 19488      | 0                       | 0.502    | 0.860       | 1.000    |
 | drift200   | 324         | 324            | 0           | 18510      | 0                       | 0.693    | 0.707       | 0.721    |
+| drift3000  | 324         | 324            | 0           | 19482      | 0                       | 0.693    | 0.716       | 1.000    |
+| drift4000  | 324         | 324            | 0           | 19470      | 0                       | 0.508    | 0.716       | 1.000    |
 | drift50    | 324         | 324            | 0           | 18870      | 0                       | 0.693    | 0.707       | 0.721    |
+| drift6000  | 324         | 324            | 0           | 19452      | 0                       | 0.523    | 0.716       | 1.000    |
 | drift8000  | 286         | 286            | 0           | 18330      | 0                       | 0.503    | 0.711       | 1.000    |
 | interval2s | 72          | 72             | 0           | 4422       | 0                       | 0.693    | 0.707       | 0.721    |
 | interval8s | 36          | 36             | 0           | 4425       | 0                       | 0.693    | 0.707       | 0.721    |
@@ -259,6 +391,11 @@ Late joiner sits -0.004 intervals away from the rest of the session (-0.02 ms).
 
 `markers skipped at emit` should be 0: a non-zero value means a marker was
 scheduled into a gap in the client's own sample stream and never sent.
+
+`peak` saturates at 1.0 (see the clamp in interval_probe.h), so a peak
+of exactly 1.0000 means the correlation was at or above the clamp, not
+that the marker was received more cleanly than usual. It shows up on
+post-slip rows and must not be read as a detection-quality change.
 
 `shadow rows` are duplicate (listener, emitter, k) triples. A Hann template
 aligned half a burst late still correlates about 0.5 with the burst, so
