@@ -42,13 +42,29 @@ To rebuild the trees from scratch, use the script rather than doing it by hand
                                # committed tree; non-zero exit on any drift
 ```
 
-`--check` runs in CI. It answers "is `vendor/` still exactly what upstream
-ships?" without touching the working tree, so an accidental edit to a vendored
-file fails the build instead of sitting there until the next security bump.
+`miniaudio_impl.c` and `stb_vorbis_impl.c` are hand-written (the shim TUs);
+the script copies them through unchanged and will refuse to run if either is
+missing.
+
+`--check` runs in CI, and in `demo/run_demo.sh`. It answers "is `vendor/` still
+exactly what upstream ships?" without touching the working tree, so an accidental
+edit to a vendored file fails the build instead of sitting there until the next
+security bump.
 
 To move a dependency forward: change its version and SHA-256 at the top of
 `refresh-vendor.sh`, run the script, rebuild, run the tests and the demo.
 
-`miniaudio_impl.c` and `stb_vorbis_impl.c` are hand-written (the shim TUs);
-the script copies them through unchanged and will refuse to run if either is
-missing.
+### One generated header
+
+`libogg/include/ogg/config_types.h` is **not** in the upstream tarball. Upstream
+generates it — autotools from `config_types.h.in`, or CMake via
+`configure_file()` — and `refresh-vendor.sh` does the same substitution with the
+same integer types.
+
+It is needed because `ogg/os_types.h` has hand-written typedefs for Windows,
+macOS, Haiku, BeOS, OS/2, DJGPP, PS2, Symbian and TMS320C6X, and a fallthrough
+`#else` for everything else that includes `<ogg/config_types.h>`. **macOS matches
+its own branch first and never reaches the `#else`**, so a project that only ever
+builds on macOS will not notice the header is missing — and the first Linux
+build will fail with `'ogg/config_types.h' file not found`. If you bump libogg,
+check that this header is still being generated.

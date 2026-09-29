@@ -1,0 +1,76 @@
+[    0.000] connecting to 127.0.0.1:20491 as alice
+[    0.000] connected
+[    0.003] S>C 0x00 CHALLENGE challenge=2825a9c13ebb398a caps=0x00000300 ver=0x00020000 keepalive=3s license=0b
+[    0.003] C>S 0x80 AUTH_USER user=alice hash=3a94b1bd06b98321b3b1eee83f1e54adff5e7531 caps=0
+[    0.015] S>C 0x01 AUTH_OK user=alice maxchan=8
+[    0.015] C>S 0x82 SET_CHANNEL_INFO n=1
+[    0.015] S>C 0x02 CONFIG bpm=100 bpi=8
+[    0.016] interval clock started: 230400 samples (4800ms)
+[    0.016] S>C 0x03 USERINFO nrecords=0
+[    0.037] C>S 0x83 UPLOAD_BEGIN guid=daaa987bbb8d54d673de429ad71fcae4 chidx=0 interval=0
+[    0.038] C>S 0x84 WRITE guid=daaa987bbb8d54d673de429ad71fcae4 flags=0 bytes=3552
+[    1.287] S>C 0xC0 CHAT TOPIC:  | zclient interop demo |  | 
+[    1.287] S>C 0xC0 CHAT JOIN: bob@127.0.0.1 |  |  | 
+[    1.293] S>C 0x03 USERINFO nrecords=1
+[    1.293]   user=bob@127.0.0.1 ch=0 active=1 name=zclient-bob flags=0x00
+[    1.293] C>S 0x81 SET_USERMASK user=bob@127.0.0.1 mask=0x00000001
+[    2.008] C>S 0xC0 CHAT MSG: hello from alice (zclient)
+[    2.015] S>C 0xC0 CHAT MSG: alice | hello from alice (zclient) |  | 
+[    2.045] S>C 0x04 DOWNLOAD_BEGIN user=bob@127.0.0.1 ch=0 guid=2a7afe696ca7c9ddd81aabc02c416a48 fourcc=0x7647474F
+[    2.595] C>S 0x84 WRITE guid=daaa987bbb8d54d673de429ad71fcae4 flags=0 bytes=4261
+[    4.287] S>C 0x05 WRITE user=bob@127.0.0.1 bytes=3552 flags=0 total=3552
+[    4.287] S>C 0xC0 CHAT MSG: bob@127.0.0.1 | hello from bob (zclient anonymous) |  | 
+[    4.692] S>C 0x05 WRITE user=bob@127.0.0.1 bytes=4278 flags=0 total=7830
+[    4.820] C>S 0x84 WRITE guid=daaa987bbb8d54d673de429ad71fcae4 flags=1 bytes=3962
+[    4.820] interval 0 complete (230400 samples, 4800ms)
+[    4.843] C>S 0x83 UPLOAD_BEGIN guid=911b35056929c72da0c659fbc6eb7b96 chidx=0 interval=1
+[    4.843] C>S 0x84 WRITE guid=911b35056929c72da0c659fbc6eb7b96 flags=0 bytes=3552
+[    6.824] S>C 0x05 WRITE user=bob@127.0.0.1 bytes=3674 flags=1 total=11504
+[    6.824] download complete user=bob@127.0.0.1 ch=0 bytes=11504 fourcc=0x7647474F
+[    6.827] decoded user=bob@127.0.0.1 ch=0 srate=48000 ch=1 frames=230400 rms=0.284596
+[    6.828] wav open s1-A/bob_127.0.0.1_ch0.wav (srate=48000)
+[    6.847] S>C 0x04 DOWNLOAD_BEGIN user=bob@127.0.0.1 ch=0 guid=de4adb0dfa2554d950b5b29d4bbf9d68 fourcc=0x7647474F
+[    7.396] C>S 0x84 WRITE guid=911b35056929c72da0c659fbc6eb7b96 flags=0 bytes=4254
+[    9.463] S>C 0x05 WRITE user=bob@127.0.0.1 bytes=3552 flags=0 total=3552
+[    9.463] S>C 0x05 WRITE user=bob@127.0.0.1 bytes=4246 flags=0 total=7798
+[    9.632] C>S 0x84 WRITE guid=911b35056929c72da0c659fbc6eb7b96 flags=1 bytes=3965
+[    9.632] interval 1 complete (230400 samples, 4800ms)
+[    9.654] C>S 0x83 UPLOAD_BEGIN guid=18313e7b7df64679547c6cf612ab22e4 chidx=0 interval=2
+[    9.654] C>S 0x84 WRITE guid=18313e7b7df64679547c6cf612ab22e4 flags=0 bytes=3552
+[   11.630] S>C 0x05 WRITE user=bob@127.0.0.1 bytes=3715 flags=1 total=11513
+[   11.630] download complete user=bob@127.0.0.1 ch=0 bytes=11513 fourcc=0x7647474F
+[   11.632] decoded user=bob@127.0.0.1 ch=0 srate=48000 ch=1 frames=230400 rms=0.284626
+[   11.655] S>C 0x04 DOWNLOAD_BEGIN user=bob@127.0.0.1 ch=0 guid=7f93644e3c5a8787e7daf778ea05bf70 fourcc=0x7647474F
+[   12.200] C>S 0x84 WRITE guid=18313e7b7df64679547c6cf612ab22e4 flags=0 bytes=4257
+[   14.269] S>C 0x05 WRITE user=bob@127.0.0.1 bytes=3552 flags=0 total=3552
+[   14.269] S>C 0x05 WRITE user=bob@127.0.0.1 bytes=4250 flags=0 total=7802
+[   14.416] C>S 0x84 WRITE guid=18313e7b7df64679547c6cf612ab22e4 flags=1 bytes=3964
+[   14.416] interval 2 complete (230400 samples, 4800ms)
+[   14.438] C>S 0x83 UPLOAD_BEGIN guid=0f39fcc40d94b2403e70c6f4121c8b47 chidx=0 interval=3
+[   14.438] C>S 0x84 WRITE guid=0f39fcc40d94b2403e70c6f4121c8b47 flags=0 bytes=3552
+[   16.422] S>C 0x05 WRITE user=bob@127.0.0.1 bytes=3713 flags=1 total=11515
+[   16.422] download complete user=bob@127.0.0.1 ch=0 bytes=11515 fourcc=0x7647474F
+[   16.427] decoded user=bob@127.0.0.1 ch=0 srate=48000 ch=1 frames=230400 rms=0.284031
+[   16.448] S>C 0x04 DOWNLOAD_BEGIN user=bob@127.0.0.1 ch=0 guid=6d293905c4a0fa46673274583eec56ed fourcc=0x7647474F
+[   16.993] C>S 0x84 WRITE guid=0f39fcc40d94b2403e70c6f4121c8b47 flags=0 bytes=4256
+[   19.066] S>C 0x05 WRITE user=bob@127.0.0.1 bytes=3552 flags=0 total=3552
+[   19.066] S>C 0x05 WRITE user=bob@127.0.0.1 bytes=4250 flags=0 total=7802
+[   19.234] C>S 0x84 WRITE guid=0f39fcc40d94b2403e70c6f4121c8b47 flags=1 bytes=3965
+[   19.234] interval 3 complete (230400 samples, 4800ms)
+[   19.257] C>S 0x83 UPLOAD_BEGIN guid=2b7f34dfb32bd1d11a357e05c4d888b5 chidx=0 interval=4
+[   19.257] C>S 0x84 WRITE guid=2b7f34dfb32bd1d11a357e05c4d888b5 flags=0 bytes=3552
+[   21.239] S>C 0x05 WRITE user=bob@127.0.0.1 bytes=3713 flags=1 total=11515
+[   21.239] download complete user=bob@127.0.0.1 ch=0 bytes=11515 fourcc=0x7647474F
+[   21.241] decoded user=bob@127.0.0.1 ch=0 srate=48000 ch=1 frames=230400 rms=0.283955
+[   21.258] S>C 0x04 DOWNLOAD_BEGIN user=bob@127.0.0.1 ch=0 guid=ae17ea0f7d3ce155a056cbdfd4c41956 fourcc=0x7647474F
+[   21.804] C>S 0x84 WRITE guid=2b7f34dfb32bd1d11a357e05c4d888b5 flags=0 bytes=4260
+[   23.878] S>C 0x05 WRITE user=bob@127.0.0.1 bytes=3552 flags=0 total=3552
+[   23.878] S>C 0x05 WRITE user=bob@127.0.0.1 bytes=4280 flags=0 total=7832
+[   24.025] C>S 0x84 WRITE guid=2b7f34dfb32bd1d11a357e05c4d888b5 flags=1 bytes=3964
+[   24.025] interval 4 complete (230400 samples, 4800ms)
+[   24.047] C>S 0x83 UPLOAD_BEGIN guid=3fb004c2a40d8ddad024fe2b76634629 chidx=0 interval=5
+[   24.047] C>S 0x84 WRITE guid=3fb004c2a40d8ddad024fe2b76634629 flags=0 bytes=3552
+[   25.287] S>C 0xC0 CHAT PART: bob@127.0.0.1 |  |  | 
+[   26.005] wav s1-A/bob_127.0.0.1_ch0.wav frames=921600 srate=48000 rms=0.284280 peak=0.424805
+[   26.006] session end: ok=true
+RESULT ok=true err="" msgs_sent=26 msgs_recv=29 bytes_sent=63078 bytes_recv=54685 intervals_uploaded=5 upload_channels=1 upload_chunks=16 upload_bytes=62420 intervals_downloaded=4 download_bytes=53879 samples_decoded=921600 chat_sent=1 chat_received=5 wav_count=1 wav_rms_avg=0.284280 live=false device="" dev_srate=0 capture_frames=0 capture_starved=0 capture_rms=0.000000 capture_peak=0.000000 playback_frames=0 playback_rms=0.000000 playback_peak=0.000000 audio_underruns=0 audio_overruns=0

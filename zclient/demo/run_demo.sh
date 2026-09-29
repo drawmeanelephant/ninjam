@@ -48,6 +48,11 @@ echo "== unit tests =="
   cat "$EVDIR/unit-tests.txt"; fail "zig build test"; }
 grep -E "test$|tests passed" "$EVDIR/unit-tests.txt" | tail -3 || true
 
+echo "== vendored sources match their pinned upstream =="
+( cd "$ZDIR" && bash vendor/refresh-vendor.sh --check ) > "$EVDIR/vendor-check.txt" 2>&1 || {
+  cat "$EVDIR/vendor-check.txt"; fail "vendor tree has drifted from its upstream pins"; }
+tail -1 "$EVDIR/vendor-check.txt"
+
 echo "== building reference server from repo C++ (out-of-tree, unmodified) =="
 if [ ! -x "$SRVBUILD/bin/ninjamsrv" ]; then
   cmake -S "$REPO" -B "$SRVBUILD" -DCMAKE_BUILD_TYPE=Release \

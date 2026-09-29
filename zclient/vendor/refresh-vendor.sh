@@ -81,6 +81,27 @@ trim_tree() { # root
       -o -name '.github' \) -prune -exec rm -rf {} +
 }
 
+# libogg ships ogg/os_types.h with per-platform typedefs for Windows, macOS,
+# Haiku, BeOS, OS/2, DJGPP, PS2, Symbian and TMS320C6X -- and a fallthrough
+# branch for everything else that includes <ogg/config_types.h>. That header is
+# NOT in the tarball; upstream generates it, autotools from config_types.h.in
+# and CMake via configure_file(). Linux needs it, macOS never reaches it (its
+# branch at os_types.h:71 matches first), so a build that only ever runs on
+# macOS will not notice it is missing.
+#
+# So generate it exactly the way libogg's own CMakeLists.txt does: the same
+# integer types, stdint-based, with no configure-time probing.
+generate_config_types() { # root
+  local root=$1
+  sed -e 's|@INCLUDE_INTTYPES_H@|0|' \
+      -e 's|@INCLUDE_STDINT_H@|1|' \
+      -e 's|@INCLUDE_SYS_TYPES_H@|0|' \
+      -e 's|@SIZE16@|int16_t|' -e 's|@USIZE16@|uint16_t|' \
+      -e 's|@SIZE32@|int32_t|' -e 's|@USIZE32@|uint32_t|' \
+      -e 's|@SIZE64@|int64_t|' -e 's|@USIZE64@|uint64_t|' \
+      "$root/include/ogg/config_types.h.in" > "$root/include/ogg/config_types.h"
+}
+
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 OUT="$WORK/vendor"
@@ -90,6 +111,7 @@ echo "== libogg $OGG_VER =="
 fetch "$OGG_URL" "$OGG_SHA" "$WORK/libogg.tar.gz"
 tar xzf "$WORK/libogg.tar.gz" -C "$WORK"
 mv "$WORK/libogg-$OGG_VER" "$OUT/libogg"
+generate_config_types "$OUT/libogg"
 trim_tree "$OUT/libogg"
 
 echo "== libvorbis $VORBIS_VER =="
