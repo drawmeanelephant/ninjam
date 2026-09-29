@@ -1,0 +1,79 @@
+[    0.000] connecting to 127.0.0.1:20491 as alice
+[    0.000] connected
+[    0.002] S>C 0x00 CHALLENGE challenge=8656155e60a2804c caps=0x00000300 ver=0x00020000 keepalive=3s license=0b
+[    0.002] C>S 0x80 AUTH_USER user=alice hash=06ab1aaa99110ae9f68df025ca77c6091cba8e9b caps=0
+[    0.017] S>C 0x01 AUTH_OK user=alice maxchan=8
+[    0.017] C>S 0x82 SET_CHANNEL_INFO n=1
+[    0.097] S>C 0x02 CONFIG bpm=100 bpi=8
+[    0.104] interval clock started: 230400 samples (4800ms)
+[    0.104] S>C 0x03 USERINFO nrecords=0
+[    0.104] S>C 0xC0 CHAT TOPIC:  | zclient interop demo |  | 
+[    0.104] S>C 0xC0 CHAT JOIN: refpeer@127.0.0.1 |  |  | 
+[    0.117] C>S 0x83 UPLOAD_BEGIN guid=25cb09074decb67dd1dbe770f0c8760d chidx=0 interval=0
+[    0.117] C>S 0x84 WRITE guid=25cb09074decb67dd1dbe770f0c8760d flags=0 bytes=3552
+[    0.118] S>C 0x03 USERINFO nrecords=2
+[    0.118]   user=refpeer@127.0.0.1 ch=0 active=0 name= flags=0x80
+[    0.118]   user=refpeer@127.0.0.1 ch=0 active=1 name= flags=0x00
+[    0.118] C>S 0x81 SET_USERMASK user=refpeer@127.0.0.1 mask=0x00000001
+[    2.689] C>S 0x84 WRITE guid=25cb09074decb67dd1dbe770f0c8760d flags=0 bytes=4264
+[    3.340] S>C 0x03 USERINFO nrecords=1
+[    3.340]   user=refpeer@127.0.0.1 ch=0 active=1 name=refpeer-tone flags=0x00
+[    4.919] C>S 0x84 WRITE guid=25cb09074decb67dd1dbe770f0c8760d flags=1 bytes=3962
+[    4.919] interval 0 complete (230400 samples, 4800ms)
+[    4.946] C>S 0x83 UPLOAD_BEGIN guid=e53e6fe6535879bb675fae204c02381c chidx=0 interval=1
+[    4.946] C>S 0x84 WRITE guid=e53e6fe6535879bb675fae204c02381c flags=0 bytes=3552
+[    5.406] S>C 0x04 DOWNLOAD_BEGIN user=refpeer@127.0.0.1 ch=0 guid=20b980a3e602ec58c5f0523a10512102 fourcc=0x7647474F
+[    7.484] C>S 0x84 WRITE guid=e53e6fe6535879bb675fae204c02381c flags=0 bytes=4252
+[    9.341] S>C 0x05 WRITE user=refpeer@127.0.0.1 bytes=9216 flags=0 total=9216
+[    9.341] S>C 0x05 WRITE user=refpeer@127.0.0.1 bytes=2842 flags=1 total=12058
+[    9.341] download complete user=refpeer@127.0.0.1 ch=0 bytes=12058 fourcc=0x7647474F
+[    9.347] decoded user=refpeer@127.0.0.1 ch=0 srate=48000 ch=1 frames=230400 rms=0.284980
+[    9.348] wav open /tmp/zclient-demo/s2/refpeer_127.0.0.1_ch0.wav (srate=48000)
+[    9.703] C>S 0x84 WRITE guid=e53e6fe6535879bb675fae204c02381c flags=1 bytes=3965
+[    9.703] interval 1 complete (230400 samples, 4800ms)
+[    9.730] C>S 0x83 UPLOAD_BEGIN guid=c463d37db79dade5142819914e0fce1b chidx=0 interval=2
+[    9.730] C>S 0x84 WRITE guid=c463d37db79dade5142819914e0fce1b flags=0 bytes=3552
+[   10.554] S>C 0x04 DOWNLOAD_BEGIN user=refpeer@127.0.0.1 ch=0 guid=a1c0f1c6d785af1846e7292798ee0f2d fourcc=0x7647474F
+[   12.283] C>S 0x84 WRITE guid=c463d37db79dade5142819914e0fce1b flags=0 bytes=4257
+[   14.344] S>C 0x05 WRITE user=refpeer@127.0.0.1 bytes=9216 flags=0 total=9216
+[   14.344] S>C 0x05 WRITE user=refpeer@127.0.0.1 bytes=2842 flags=1 total=12058
+[   14.344] download complete user=refpeer@127.0.0.1 ch=0 bytes=12058 fourcc=0x7647474F
+[   14.350] decoded user=refpeer@127.0.0.1 ch=0 srate=48000 ch=1 frames=230400 rms=0.284980
+[   14.508] C>S 0x84 WRITE guid=c463d37db79dade5142819914e0fce1b flags=1 bytes=3964
+[   14.508] interval 2 complete (230400 samples, 4800ms)
+[   14.535] C>S 0x83 UPLOAD_BEGIN guid=67c026ac382b7ea0d7f76beedc2c2bc3 chidx=0 interval=3
+[   14.536] C>S 0x84 WRITE guid=67c026ac382b7ea0d7f76beedc2c2bc3 flags=0 bytes=3552
+[   15.720] S>C 0x04 DOWNLOAD_BEGIN user=refpeer@127.0.0.1 ch=0 guid=305f44ba0eb47e0eb16fa9f79b5049da fourcc=0x7647474F
+[   17.073] C>S 0x84 WRITE guid=67c026ac382b7ea0d7f76beedc2c2bc3 flags=0 bytes=4259
+[   19.303] C>S 0x84 WRITE guid=67c026ac382b7ea0d7f76beedc2c2bc3 flags=1 bytes=3965
+[   19.303] interval 3 complete (230400 samples, 4800ms)
+[   19.329] C>S 0x83 UPLOAD_BEGIN guid=a30c066e13f52ea5f29327bd603ccd1d chidx=0 interval=4
+[   19.329] C>S 0x84 WRITE guid=a30c066e13f52ea5f29327bd603ccd1d flags=0 bytes=3552
+[   19.341] S>C 0x05 WRITE user=refpeer@127.0.0.1 bytes=9216 flags=0 total=9216
+[   19.341] S>C 0x05 WRITE user=refpeer@127.0.0.1 bytes=2842 flags=1 total=12058
+[   19.341] download complete user=refpeer@127.0.0.1 ch=0 bytes=12058 fourcc=0x7647474F
+[   19.348] decoded user=refpeer@127.0.0.1 ch=0 srate=48000 ch=1 frames=230400 rms=0.284980
+[   20.904] S>C 0x04 DOWNLOAD_BEGIN user=refpeer@127.0.0.1 ch=0 guid=09a59a8318f6cc39b68e248b858210ac fourcc=0x7647474F
+[   21.876] C>S 0x84 WRITE guid=a30c066e13f52ea5f29327bd603ccd1d flags=0 bytes=4263
+[   24.102] C>S 0x84 WRITE guid=a30c066e13f52ea5f29327bd603ccd1d flags=1 bytes=3964
+[   24.102] interval 4 complete (230400 samples, 4800ms)
+[   24.129] C>S 0x83 UPLOAD_BEGIN guid=7f082290c312922c008798c9eff0524b chidx=0 interval=5
+[   24.129] C>S 0x84 WRITE guid=7f082290c312922c008798c9eff0524b flags=0 bytes=3552
+[   24.339] S>C 0x05 WRITE user=refpeer@127.0.0.1 bytes=9216 flags=0 total=9216
+[   24.339] S>C 0x05 WRITE user=refpeer@127.0.0.1 bytes=2842 flags=1 total=12058
+[   24.339] download complete user=refpeer@127.0.0.1 ch=0 bytes=12058 fourcc=0x7647474F
+[   24.347] decoded user=refpeer@127.0.0.1 ch=0 srate=48000 ch=1 frames=230400 rms=0.284980
+[   26.048] S>C 0x04 DOWNLOAD_BEGIN user=refpeer@127.0.0.1 ch=0 guid=cab5c42909f9ad39dcae374d02e91a00 fourcc=0x7647474F
+[   26.048] S>C 0x05 WRITE user=refpeer@127.0.0.1 bytes=9216 flags=0 total=9216
+[   26.048] S>C 0x05 WRITE user=refpeer@127.0.0.1 bytes=2842 flags=1 total=12058
+[   26.048] download complete user=refpeer@127.0.0.1 ch=0 bytes=12058 fourcc=0x7647474F
+[   26.053] decoded user=refpeer@127.0.0.1 ch=0 srate=48000 ch=1 frames=230400 rms=0.284980
+[   26.671] C>S 0x84 WRITE guid=7f082290c312922c008798c9eff0524b flags=0 bytes=4260
+[   28.183] S>C 0xC0 CHAT PART: refpeer@127.0.0.1 |  |  | 
+[   28.918] C>S 0x84 WRITE guid=7f082290c312922c008798c9eff0524b flags=1 bytes=3964
+[   28.918] interval 5 complete (230400 samples, 4800ms)
+[   28.945] C>S 0x83 UPLOAD_BEGIN guid=7075bd6f96e5646ca8aef279bb4224e7 chidx=0 interval=6
+[   28.946] C>S 0x84 WRITE guid=7075bd6f96e5646ca8aef279bb4224e7 flags=0 bytes=3552
+[   30.014] session end: ok=true
+RESULT ok=true err="" msgs_sent=29 msgs_recv=29 bytes_sent=74922 bytes_recv=61017 intervals_uploaded=6 upload_chunks=19 upload_bytes=74203 intervals_downloaded=5 download_bytes=60290 samples_decoded=1152000 chat_sent=0 chat_received=3 wav_count=0 wav_rms_avg=0.000000
+[   30.022] wav /tmp/zclient-demo/s2/refpeer_127.0.0.1_ch0.wav frames=1152000 srate=48000 rms=0.284957 peak=0.420166

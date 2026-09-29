@@ -1,0 +1,3 @@
+WAV /tmp/zclient-demo/s1-A/bob_127.0.0.1_ch0.wav frames=921600 srate=48000 ch=1 rms=0.284279 peak=0.424805 pass=true
+WAV /tmp/zclient-demo/s1-B/alice_ch0.wav frames=921600 srate=48000 ch=1 rms=0.355479 peak=0.522949 pass=true
+WAV /tmp/zclient-demo/s2/refpeer_127.0.0.1_ch0.wav frames=1152000 srate=48000 ch=1 rms=0.284957 peak=0.420166 pass=true
