@@ -31,6 +31,7 @@
 
 #include "../WDL/queue.h"
 #include "../WDL/jnetlib/jnetlib.h"
+#include <vector>
 #ifndef _WIN32
 #include <netinet/tcp.h>
 #endif
@@ -90,7 +91,7 @@ class Net_Message
 class Net_Connection
 {
   public:
-    Net_Connection() : m_error(0),m_msgsendpos(-1), m_recvstate(0),m_recvmsg(0),m_con(0)
+    Net_Connection() : m_error(0),m_msgsendpos(-1), m_recvstate(0),m_recvmsg(0),m_delayseq(0),m_lastdue(0),m_con(0)
     {
       SetKeepAlive(0);
     }
@@ -139,6 +140,23 @@ class Net_Connection
 
     int m_recvstate;
     Net_Message *m_recvmsg;
+
+    // Audio messages held back by the adverse-conditions injector
+    // (NJCond). Kept sorted by due time, FIFO within equal due times. Due
+    // times are additionally forced to be non-decreasing in Send() order
+    // (see m_lastdue), so releasing them can never reorder the stream.
+    // Filled by Send(), drained by Run().
+    struct DelayedMsg
+    {
+      double due;
+      unsigned long seq;
+      Net_Message *msg;
+    };
+    std::vector<DelayedMsg> m_delayq;
+    double m_lastdue;         // last due time handed to enqueueDelayed()
+    unsigned long m_delayseq;
+    void pumpDelayed();
+    void enqueueDelayed(double due_ms, Net_Message *msg);
 
     JNL_IConnection *m_con;
     WDL_Queue m_sendq;

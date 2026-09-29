@@ -1,0 +1,5 @@
+tag=interval8s duration=150.0s markers=36 clock_rows=4425
+  client 0 ppm=+0 status_ok=0.02s first_audio=36.06s first_marker=36.06s emitted=7 decoded=12 dropped=0/108
+  client 1 ppm=+0 status_ok=0.02s first_audio=36.06s first_marker=36.06s emitted=7 decoded=12 dropped=0/108
+  client 2 ppm=+0 status_ok=0.02s first_audio=36.06s first_marker=36.06s emitted=7 decoded=12 dropped=0/108
+  logs: /Users/tbuddy/dev/z/ninjam-001/results/interval8s/interval8s_markers.csv, /Users/tbuddy/dev/z/ninjam-001/results/interval8s/interval8s_clock.csv, /Users/tbuddy/dev/z/ninjam-001/results/interval8s/interval8s_summary.txt, /Users/tbuddy/dev/z/ninjam-001/results/interval8s/interval8s_clients.csv

@@ -1,0 +1,5 @@
+tag=interval2s duration=150.0s markers=72 clock_rows=4422
+  client 0 ppm=+0 status_ok=0.02s first_audio=16.08s first_marker=16.06s emitted=12 decoded=24 dropped=0/444
+  client 1 ppm=+0 status_ok=0.02s first_audio=16.08s first_marker=16.06s emitted=12 decoded=24 dropped=0/444
+  client 2 ppm=+0 status_ok=0.02s first_audio=16.08s first_marker=16.06s emitted=12 decoded=24 dropped=0/444
+  logs: /Users/tbuddy/dev/z/ninjam-001/results/interval2s/interval2s_markers.csv, /Users/tbuddy/dev/z/ninjam-001/results/interval2s/interval2s_clock.csv, /Users/tbuddy/dev/z/ninjam-001/results/interval2s/interval2s_summary.txt, /Users/tbuddy/dev/z/ninjam-001/results/interval2s/interval2s_clients.csv

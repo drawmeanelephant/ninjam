@@ -1,0 +1,5 @@
+tag=drift50 duration=660.0s markers=324 clock_rows=18870
+  client 0 ppm=+0 status_ok=0.03s first_audio=20.06s first_marker=20.08s emitted=54 decoded=108 dropped=0/984
+  client 1 ppm=+50 status_ok=0.03s first_audio=20.06s first_marker=20.08s emitted=55 decoded=108 dropped=0/986
+  client 2 ppm=-50 status_ok=0.03s first_audio=20.06s first_marker=20.08s emitted=54 decoded=108 dropped=0/986
+  logs: /Users/tbuddy/dev/z/ninjam-001/results/drift50/drift50_markers.csv, /Users/tbuddy/dev/z/ninjam-001/results/drift50/drift50_clock.csv, /Users/tbuddy/dev/z/ninjam-001/results/drift50/drift50_summary.txt, /Users/tbuddy/dev/z/ninjam-001/results/drift50/drift50_clients.csv

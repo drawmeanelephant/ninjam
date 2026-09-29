@@ -42,6 +42,7 @@
 #include "../../WDL/jnetlib/jnetlib.h"
 #include "../../WDL/jnetlib/httpget.h"
 #include "../netmsg.h"
+#include "../netcond.h"
 #include "../mpb.h"
 #include "usercon.h"
 
@@ -861,6 +862,11 @@ const char *get_privatemode_stats(int privs, const char *req)
 
 int main(int argc, char **argv)
 {
+
+  // Optional adverse-conditions injection for the interval-model lab
+  // (NJCOND_AUDIO_LOSS_PCT / NJCOND_AUDIO_DELAY_MS / NJCOND_AUDIO_JITTER_MS).
+  // No-op when those are unset, so normal server runs are unchanged.
+  NJCond::init_from_env();
 
   if (argc < 2)
   {

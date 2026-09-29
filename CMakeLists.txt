@@ -122,6 +122,7 @@ add_library(ninjam_net STATIC
   WDL/jnetlib/webserver.cpp
   ninjam/mpb.cpp
   ninjam/netmsg.cpp
+  ninjam/netcond.cpp
 )
 
 target_include_directories(ninjam_net PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
