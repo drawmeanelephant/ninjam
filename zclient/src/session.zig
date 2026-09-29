@@ -63,6 +63,8 @@ pub const Stats = struct {
     intervals_uploaded: u64 = 0,
     upload_chunks: u64 = 0,
     upload_bytes: u64 = 0,
+    /// local channels that actually streamed audio (max across intervals)
+    upload_channels: u64 = 0,
 
     intervals_downloaded: u64 = 0,
     download_bytes: u64 = 0,
@@ -180,6 +182,41 @@ const LocalChannel = struct {
         self.name_len = n;
     }
 };
+
+/// Fill `block[0..n]` with the audio one local channel should encode for the
+/// current step.
+///
+/// In live mode `shared` is the single capture block taken for this step and
+/// every channel encodes a copy of it — that is what keeps multiple channels
+/// sample-aligned with each other. Pulling per channel instead would hand each
+/// channel a different slice of the device ring and slowly drift them apart.
+/// Synthetic sources generate per channel, so each keeps its own phase.
+pub fn encodeBlockFor(
+    source: Source,
+    srate: u32,
+    lc: *LocalChannel,
+    shared: ?[]const f32,
+    block: []f32,
+) void {
+    if (shared) |s| {
+        const n = @min(block.len, s.len);
+        @memcpy(block[0..n], s[0..n]);
+        return;
+    }
+    switch (source) {
+        .tone => |t| {
+            const dphi = 2.0 * std.math.pi * t.freq / @as(f32, @floatFromInt(srate));
+            for (block) |*s| {
+                lc.phase += dphi;
+                if (lc.phase > 2.0 * std.math.pi) lc.phase -= 2.0 * std.math.pi;
+                s.* = t.amp * @sin(lc.phase);
+            }
+        },
+        .silence => {
+            @memset(block, 0);
+        },
+    }
+}
 
 pub const Session = struct {
     alloc: std.mem.Allocator,
@@ -527,21 +564,7 @@ pub const Session = struct {
             for (self.locals) |*lc| {
                 if (!lc.broadcast) continue;
                 var block: [encode_block_samples]f32 = undefined;
-                if (self.dev != null) {
-                    @memcpy(block[0..n], live_block[0..n]);
-                } else switch (self.opts.source) {
-                    .tone => |t| {
-                        const dphi = 2.0 * std.math.pi * t.freq / @as(f32, @floatFromInt(self.opts.srate));
-                        for (block[0..n]) |*s| {
-                            lc.phase += dphi;
-                            if (lc.phase > 2.0 * std.math.pi) lc.phase -= 2.0 * std.math.pi;
-                            s.* = t.amp * @sin(lc.phase);
-                        }
-                    },
-                    .silence => {
-                        @memset(block[0..n], 0);
-                    },
-                }
+                encodeBlockFor(self.opts.source, self.opts.srate, lc, if (self.dev != null) live_block[0..n] else null, block[0..n]);
                 var out: std.ArrayList(u8) = .empty;
                 defer out.deinit(self.alloc);
                 lc.enc.?.encode(block[0..n], &out) catch |e| {
@@ -665,6 +688,11 @@ pub const Session = struct {
             }
         }
         self.stats.intervals_uploaded += 1;
+        var streaming: u64 = 0;
+        for (self.locals) |lc| {
+            if (lc.broadcast) streaming += 1;
+        }
+        self.stats.upload_channels = @max(self.stats.upload_channels, streaming);
         self.log.line("interval {d} complete ({d} samples, {d}ms)", .{
             self.interval_idx, self.interval_len_samples, self.interval_len_samples * 1000 / self.opts.srate,
         });
@@ -988,3 +1016,39 @@ pub const Session = struct {
         return self.stats;
     }
 };
+
+test "multi-channel live capture shares one block per step (channels stay aligned)" {
+    var a = LocalChannel{ .pending = Buf.init(std.testing.allocator) };
+    defer a.pending.deinit();
+    var b = LocalChannel{ .pending = Buf.init(std.testing.allocator) };
+    defer b.pending.deinit();
+
+    var shared: [64]f32 = undefined;
+    for (&shared, 0..) |*s, i| s.* = @sin(@as(f32, @floatFromInt(i)) * 0.1);
+
+    var ba: [64]f32 = undefined;
+    var bb: [64]f32 = undefined;
+    encodeBlockFor(.silence, 48000, &a, &shared, &ba);
+    encodeBlockFor(.silence, 48000, &b, &shared, &bb);
+    // identical sample-for-sample: a per-channel pull would shift b by a block
+    for (ba, bb) |x, y| try std.testing.expectEqual(x, y);
+    try std.testing.expectEqual(shared[0], ba[0]);
+    try std.testing.expectEqual(shared[63], ba[63]);
+}
+
+test "synthetic sources keep an independent phase per channel" {
+    var a = LocalChannel{ .pending = Buf.init(std.testing.allocator) };
+    defer a.pending.deinit();
+    var b = LocalChannel{ .pending = Buf.init(std.testing.allocator) };
+    defer b.pending.deinit();
+    b.phase = 1.0; // start somewhere else in the cycle
+
+    var ba: [128]f32 = undefined;
+    var bb: [128]f32 = undefined;
+    const src = Source{ .tone = .{ .freq = 440, .amp = 0.5 } };
+    encodeBlockFor(src, 48000, &a, null, &ba);
+    encodeBlockFor(src, 48000, &b, null, &bb);
+    try std.testing.expect(ba[0] != bb[0]);
+    // each channel still advances its own oscillator
+    try std.testing.expect(a.phase != b.phase);
+}

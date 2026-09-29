@@ -136,6 +136,12 @@ int main(int argc, char **argv)
   double phase = 0.0, rx_energy = 0.0;
   double remote_peak = 0.0;
   int remote_channels_seen = 0;
+  // per-user channel accounting: how many channels the busiest remote user
+  // publishes, and the peak the reference decoder produced for each of them
+  const int MAX_USERS = 4, MAX_CH = 8;
+  int user_max_ch[MAX_USERS] = {0};
+  double user_ch_peak[MAX_USERS][MAX_CH] = {{0}};
+  int primary_user = -1;
   const double run_secs = duration;
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::duration<double>(run_secs);
   const double block_wall = (double)CHUNK / (double)SRATE; // real-time pacing
@@ -157,16 +163,23 @@ int main(int argc, char **argv)
     for (int spins = 0; !sleepok && spins < 64; spins++) sleepok = client.Run();
 
     // subscribe + track remote channels (as ninjam/tests/e2e_test.cpp does)
-    for (int u = 0; u < client.GetNumUsers(); u++)
+    for (int u = 0; u < client.GetNumUsers() && u < MAX_USERS; u++)
     {
-      for (int ch = 0; client.EnumUserChannels(u, ch) >= 0; ch++)
+      int nch = 0;
+      for (int ch = 0; client.EnumUserChannels(u, ch) >= 0 && ch < MAX_CH; ch++)
       {
+        nch++;
         remote_channels_seen++;
         client.SetUserChannelState(u, ch, true, true, false, 0, false, 0, false, false, false, false);
         float pk = client.GetUserChannelPeak(u, ch);
         if (pk > remote_peak) remote_peak = pk;
+        if (pk > user_ch_peak[u][ch]) user_ch_peak[u][ch] = pk;
       }
+      if (nch > user_max_ch[u]) user_max_ch[u] = nch;
     }
+    for (int u = 0; u < MAX_USERS; u++)
+      if (user_max_ch[u] > 0 && (primary_user < 0 || user_max_ch[u] > user_max_ch[primary_user]))
+        primary_user = u;
 
     // keep the pump at real time
     const double spent = std::chrono::duration<double>(std::chrono::steady_clock::now() - block_start).count();
@@ -178,16 +191,24 @@ int main(int argc, char **argv)
 
   // A passing run requires: we saw at least one remote channel and the
   // reference client's decoder produced real signal energy from it.
+  int primary_ch = (primary_user >= 0) ? user_max_ch[primary_user] : 0;
   int ok = (remote_channels_seen > 0) && (remote_peak > 1e-4) && (rx_energy > 1e-4);
-  printf("REFPEER RESULT ok=%d remote_channels_seen=%d remote_peak=%.6f rx_energy=%.6f chat_lines=%zu\n",
-         ok, remote_channels_seen, remote_peak, rx_energy, ctx.chat.size());
+
+  char peaks[256] = {0};
+  for (int ch = 0; ch < primary_ch && ch < MAX_CH; ch++)
+    snprintf(peaks + strlen(peaks), sizeof(peaks) - strlen(peaks), "%s%.6f", ch ? "," : "", user_ch_peak[primary_user][ch]);
+
+  printf("REFPEER RESULT ok=%d remote_channels_seen=%d remote_peak=%.6f rx_energy=%.6f chat_lines=%zu "
+         "primary_user=%d primary_channels=%d primary_ch_peaks=%s\n",
+         ok, remote_channels_seen, remote_peak, rx_energy, ctx.chat.size(), primary_user, primary_ch, peaks);
   if (report)
   {
     FILE *fp = fopen(report, "w");
     if (fp)
     {
-      fprintf(fp, "REFPEER RESULT ok=%d remote_channels_seen=%d remote_peak=%.6f rx_energy=%.6f chat_lines=%zu\n",
-              ok, remote_channels_seen, remote_peak, rx_energy, ctx.chat.size());
+      fprintf(fp, "REFPEER RESULT ok=%d remote_channels_seen=%d remote_peak=%.6f rx_energy=%.6f chat_lines=%zu "
+                  "primary_user=%d primary_channels=%d primary_ch_peaks=%s\n",
+              ok, remote_channels_seen, remote_peak, rx_energy, ctx.chat.size(), primary_user, primary_ch, peaks);
       for (auto &l : ctx.chat) fprintf(fp, "chat: %s\n", l.c_str());
       fclose(fp);
     }

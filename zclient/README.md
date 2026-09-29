@@ -120,6 +120,10 @@ pthreads so the audio thread can block rather than spin.
   seconds stale.
 * The playback ring holds 30 s because a decoded NINJAM interval arrives in a
   single burst (60 bpm x 16 bpi is already 16 s of audio).
+* With multiple `--channel`s, the capture block is pulled once per encode step
+  and shared (`session.encodeBlockFor`). Pulling per channel would hand each
+  channel a different slice of the device ring and drift them apart in time; a
+  unit test pins that invariant.
 * Live audio is developed and verified on macOS/Core Audio. On Linux the same
   code path needs ALSA development headers at build time (`-Dlive=true`);
   `-Dlive=false` builds everywhere and stays fully static.
@@ -127,7 +131,7 @@ pthreads so the audio thread can block rather than spin.
 ## Verification
 
 `demo/run_demo.sh` builds the **unmodified** reference server and the reference
-client core out of tree, then runs three scenarios against a real server and
+client core out of tree, then runs four scenarios against a real server and
 writes transcripts, summaries, unit-test output, WAV analysis and the server log
 to `demo/evidence/<timestamp>/`. It asserts signal energy everywhere and keeps
 a silence negative control, so a run that passes on silence cannot pass.
@@ -140,6 +144,9 @@ a silence negative control, so a run that passes on silence cannot pass.
 3. **Live audio**: a real Core Audio device opens, real microphone frames reach
    the upload (the reference client decodes them), and the decoded peer mix
    reaches the output ring — mirrored to `--play-wav` and energy-checked.
+4. **Multi-channel live**: two local channels off the same device. Both must
+   stream, and the reference client must decode real audio on *both* — the
+   end-to-end check that they stay aligned rather than drifting apart.
 
 ```sh
 bash demo/run_demo.sh
@@ -147,9 +154,10 @@ bash demo/run_demo.sh
 
 ## Limitations
 
-* One local channel is announced by default (`--channel` may be repeated; the
-  session engine handles several, but only live capture is verified for one).
+* Multiple local channels share one capture signal; there is no per-channel
+  source selection (a second mic would need a second device or a channel mixer).
 * No metronome/beat clock UI, no recording, no chat UI: this is a protocol
   client with a CLI, not a DAW.
 * Live output is a mono sum of every subscribed peer, like the reference
   client; there is no per-peer gain.
+* Live audio is verified on macOS/Core Audio only.

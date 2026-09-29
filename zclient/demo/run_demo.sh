@@ -18,6 +18,11 @@
 #   session thread as the samples cross the ring boundary, and mirrored to a
 #   WAV so it can be energy-checked. Skipped with a clear message when the
 #   machine has no usable device.
+# Scenario 4 (Phase B, multi-channel): the same live device, but two local
+#   channels. Both must stream, and the reference client must decode real audio
+#   on BOTH of them -- which is the end-to-end check that the channels stay
+#   aligned (a per-channel pull from the device ring would still produce two
+#   audible channels, just time-shifted against each other).
 #
 # Evidence (transcripts, summaries, reports, WAV analysis, unit tests, server
 # log) is collected under zclient/demo/evidence/<timestamp>/.
@@ -88,8 +93,8 @@ pkill -f ninjamsrv 2>/dev/null; sleep 0.3
 SRVPID=$!
 sleep 0.7
 
-DUMP1="$RUNTIME/s1-A"; DUMP2="$RUNTIME/s1-B"; DUMP3="$RUNTIME/s2"; DUMP4="$RUNTIME/s3"
-rm -rf "$DUMP1" "$DUMP2" "$DUMP3" "$DUMP4"
+DUMP1="$RUNTIME/s1-A"; DUMP2="$RUNTIME/s1-B"; DUMP3="$RUNTIME/s2"; DUMP4="$RUNTIME/s3"; DUMP5="$RUNTIME/s4"
+rm -rf "$DUMP1" "$DUMP2" "$DUMP3" "$DUMP4" "$DUMP5"
 
 cleanup() { kill $SRVPID 2>/dev/null; wait $SRVPID 2>/dev/null; }
 trap cleanup EXIT
@@ -132,6 +137,17 @@ Z=$!
 "$RUNTIME/refpeer" --host 127.0.0.1:$PORT --user anonymous:refpeer --pass x \
   --duration 24 --freq 660 --amp 0.2 --report "$EVDIR/s3-refpeer-report.txt" \
   > "$EVDIR/s3-refpeer.log" 2>&1
+wait $Z
+
+echo "== scenario 4: zclient --live with two local channels =="
+"$ZCLIENT" join --host 127.0.0.1:$PORT --user alice --pass secret \
+  --live --duration 26 --channel "zclient-a" --channel "zclient-b" \
+  --out-dir "$DUMP5" --transcript "$EVDIR/s4-transcript-zclient.log" \
+  > "$EVDIR/s4-summary-zclient.txt" 2>&1 &
+Z=$!
+"$RUNTIME/refpeer" --host 127.0.0.1:$PORT --user anonymous:refpeer --pass x \
+  --duration 24 --freq 660 --amp 0.2 --report "$EVDIR/s4-refpeer-report.txt" \
+  > "$EVDIR/s4-refpeer.log" 2>&1
 wait $Z
 
 echo "== assertions =="
@@ -182,11 +198,34 @@ else
   RP=$(grep -o "remote_peak=[0-9.]*" "$EVDIR/s3-refpeer-report.txt" | cut -d= -f2)
   awk -v p="$RP" 'BEGIN{exit !(p>0)}' || fail "scenario3: reference client saw no live-mic energy"
   echo "live audio verified: device=\"$DEVNAME\" capture_rms=$CAPRMS playback_rms=$PLAYRMS refpeer_peak=$RP"
+
+  # Scenario 4 (multi-channel live). Both channels must be transmitted and the
+  # reference client must decode real audio on each of them.
+  S4="$EVDIR/s4-summary-zclient.txt"
+  [ "$(result_field ok "$S4")" = "true" ] || fail "scenario4 zclient not ok: $(cat "$S4")"
+  if [ "$(result_field live "$S4")" != "true" ]; then
+    echo "SKIP scenario 4: no audio device available on this machine (see $S4)"
+  else
+    UC=$(result_field upload_channels "$S4"); [ "$UC" -eq 2 ] || fail "scenario4: upload_channels=$UC, expected 2"
+    IU=$(result_field intervals_uploaded "$S4"); [ "$IU" -ge 3 ] || fail "scenario4: intervals_uploaded=$IU <3"
+    grep -q "0x82 SET_CHANNEL_INFO n=2" "$EVDIR/s4-transcript-zclient.log" || fail "scenario4: did not announce 2 channels"
+    NCH=$(grep -o "primary_channels=[0-9]*" "$EVDIR/s4-refpeer-report.txt" | head -1 | cut -d= -f2)
+    [ "${NCH:-0}" -ge 2 ] || fail "scenario4: reference client sees $NCH channel(s), expected >=2"
+    # every channel the reference client decoded must carry energy
+    echo "$NCH" | grep -q . || fail "scenario4: no channel count in $EVDIR/s4-refpeer-report.txt"
+    PEAKS=$(grep -o "primary_ch_peaks=[^ ]*" "$EVDIR/s4-refpeer-report.txt" | head -1 | cut -d= -f2)
+    nonquiet=0
+    for p in ${PEAKS//,/ }; do
+      awk -v v="$p" 'BEGIN{exit !(v>0)}' && nonquiet=$((nonquiet+1))
+    done
+    [ "$nonquiet" -ge 2 ] || fail "scenario4: only $nonquiet of 2 channels had energy (peaks=$PEAKS)"
+    echo "multi-channel live verified: channels=$UC intervals=$IU reference_channels=$NCH peaks=$PEAKS"
+  fi
 fi
 
 echo "-- WAV energy checks (non-silence assertions) --"
 wavchecks=0
-for f in "$DUMP1"/*.wav "$DUMP2"/*.wav "$DUMP3"/*.wav "$DUMP4"/*.wav; do
+for f in "$DUMP1"/*.wav "$DUMP2"/*.wav "$DUMP3"/*.wav "$DUMP4"/*.wav "$DUMP5"/*.wav; do
   [ -e "$f" ] || continue
   OUT=$("$ZCLIENT" check-wav "$f" --min-rms 0.05) || fail "WAV below threshold: $f"
   echo "$OUT" | tee -a "$EVDIR/wav-analysis.txt"
@@ -202,8 +241,8 @@ fi
 echo "silence correctly rejected (exit $?)"
 
 echo "== evidence -> $EVDIR =="
-cp "$EVDIR"/s1-summary-*.txt "$EVDIR"/s2-summary-*.txt "$EVDIR"/s3-summary-*.txt \
-   "$EVDIR"/s2-refpeer-report.txt "$EVDIR"/s3-refpeer-report.txt "$EVDIR/" 2>/dev/null || true
+cp "$EVDIR"/s1-summary-*.txt "$EVDIR"/s2-summary-*.txt "$EVDIR"/s3-summary-*.txt "$EVDIR"/s4-summary-*.txt \
+   "$EVDIR"/s2-refpeer-report.txt "$EVDIR"/s3-refpeer-report.txt "$EVDIR"/s4-refpeer-report.txt "$EVDIR/" 2>/dev/null || true
 if command -v ffmpeg >/dev/null 2>&1; then
   first_wav=$(ls "$DUMP2"/*.wav 2>/dev/null | head -1)
   [ -n "$first_wav" ] && ffmpeg -y -v error -i "$first_wav" -t 5 "$EVDIR/sample-decoded-peer-5s.wav"

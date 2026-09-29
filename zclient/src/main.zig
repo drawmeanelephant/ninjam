@@ -157,7 +157,7 @@ fn cmdJoin(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, argv: [
     const w = out_buf[0..];
     n += (std.fmt.bufPrint(w[n..], "RESULT ok={} err=\"{s}\"", .{ stats.ok, stats.failText() }) catch return).len;
     n += (std.fmt.bufPrint(w[n..], " msgs_sent={d} msgs_recv={d} bytes_sent={d} bytes_recv={d}", .{ stats.msgs_sent, stats.msgs_recv, stats.bytes_sent, stats.bytes_recv }) catch return).len;
-    n += (std.fmt.bufPrint(w[n..], " intervals_uploaded={d} upload_chunks={d} upload_bytes={d}", .{ stats.intervals_uploaded, stats.upload_chunks, stats.upload_bytes }) catch return).len;
+    n += (std.fmt.bufPrint(w[n..], " intervals_uploaded={d} upload_channels={d} upload_chunks={d} upload_bytes={d}", .{ stats.intervals_uploaded, stats.upload_channels, stats.upload_chunks, stats.upload_bytes }) catch return).len;
     n += (std.fmt.bufPrint(w[n..], " intervals_downloaded={d} download_bytes={d} samples_decoded={d}", .{ stats.intervals_downloaded, stats.download_bytes, stats.samples_decoded }) catch return).len;
     n += (std.fmt.bufPrint(w[n..], " chat_sent={d} chat_received={d} wav_count={d} wav_rms_avg={d:.6}", .{ stats.chat_sent, stats.chat_received, stats.wav_count, if (stats.wav_count > 0) stats.wav_rms_sum / @as(f64, @floatFromInt(stats.wav_count)) else 0.0 }) catch return).len;
     n += (std.fmt.bufPrint(w[n..], " live={} device=\"{s}\" dev_srate={d}", .{ stats.live, stats.deviceName(), stats.device_srate }) catch return).len;
