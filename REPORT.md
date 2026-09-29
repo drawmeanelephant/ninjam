@@ -208,22 +208,31 @@ listeners' answers to the same event - pairwise, never absolute.
 
 ## 8. What is still open
 
+Each of these has a tracking issue.
+
 - **Where exactly does the slip threshold sit?** 8000 ppm slips and 200 ppm
   does not. The interesting number - the drift at which a client first crosses
   half an interval - is between them and was not bisected. A sweep at
-  500/1000/2000/4000 ppm would find it.
+  500/1000/2000/4000 ppm would find it. Note the runs need to be long enough
+  to accumulate past the threshold, so duration should scale inversely with
+  ppm. [#20](https://github.com/drawmeanelephant/ninjam/issues/20)
 - **The 20 ms residual is attributed to codec and loopback latency but not
   decomposed.** It is suspiciously stable across a 4x change in interval
   length, which suggests a fixed buffer somewhere, but nothing here localises
-  it.
-- **Only one client per drift offset.** Every scenario uses a symmetric
-  `0:+X:-X` triple, so a systematic per-client bias and a genuine clock
-  difference are not separated. An asymmetric set like `0:+37:-211` would.
+  it. If it turns out to be harness-side, the true interval delay is exactly
+  two intervals. [#21](https://github.com/drawmeanelephant/ninjam/issues/21)
 - **All clients are in one process on one machine.** Inter-client skew here is
   protocol behaviour, not network behaviour, and says nothing about a real
   link with real RTT. Real deployments add RTT the interval model has to
-  absorb, which this experiment does not touch.
+  absorb, which this experiment does not touch. The 40 ms jitter result hints
+  that added latency displaces delivery time without moving playout time, but
+  that was latency variation, not a latency offset, and 40 ms is not 200 ms.
+  [#22](https://github.com/drawmeanelephant/ninjam/issues/22)
 - **Loss is all-or-nothing per message.** A real lossy link truncates streams
   mid-message. Here a dropped `INTERVAL_WRITE` loses a whole chunk, which is
   the harsher case, so the 72.2% at 10% loss is a lower bound on what
-  survives.
+  survives. [#23](https://github.com/drawmeanelephant/ninjam/issues/23)
+- **Only one client per drift offset.** Every scenario uses a symmetric
+  `0:+X:-X` triple, so a systematic per-client bias and a genuine clock
+  difference are not separated. An asymmetric set like `0:+37:-211` would.
+  Cheap to add and not yet filed.
