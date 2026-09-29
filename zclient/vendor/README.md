@@ -33,11 +33,22 @@ Nothing in the kept set is generated at build time: `libvorbis/lib/books/` and
 otherwise generate, and they are committed upstream, so they stay. That is where
 most of the remaining size is (1.3 MB of tables out of 2.4 MB).
 
-To rebuild the trees from scratch:
+To rebuild the trees from scratch, use the script rather than doing it by hand
+— it is the only place the trim rule lives:
 
 ```sh
-curl -LO https://downloads.xiph.org/releases/ogg/libogg-1.3.6.tar.gz
-curl -LO https://downloads.xiph.org/releases/vorbis/libvorbis-1.3.7.tar.gz
-tar xzf libogg-1.3.6.tar.gz && tar xzf libvorbis-1.3.7.tar.gz
-# then keep only the files listed under "What was trimmed"
+./refresh-vendor.sh            # rewrite vendor/ from the pinned downloads
+./refresh-vendor.sh --check    # regenerate to a temp dir and diff against the
+                               # committed tree; non-zero exit on any drift
 ```
+
+`--check` runs in CI. It answers "is `vendor/` still exactly what upstream
+ships?" without touching the working tree, so an accidental edit to a vendored
+file fails the build instead of sitting there until the next security bump.
+
+To move a dependency forward: change its version and SHA-256 at the top of
+`refresh-vendor.sh`, run the script, rebuild, run the tests and the demo.
+
+`miniaudio_impl.c` and `stb_vorbis_impl.c` are hand-written (the shim TUs);
+the script copies them through unchanged and will refuse to run if either is
+missing.

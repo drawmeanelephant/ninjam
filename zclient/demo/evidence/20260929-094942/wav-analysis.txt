@@ -1,6 +1,6 @@
 WAV s3-playback-mix.wav frames=921600 srate=48000 ch=1 rms=0.142352 peak=0.214661 pass=true
-WAV s1-A/bob_127.0.0.1_ch0.wav frames=1152000 srate=48000 ch=1 rms=0.284347 peak=0.427368 pass=true
-WAV s1-B/alice_ch0.wav frames=921600 srate=48000 ch=1 rms=0.355426 peak=0.522949 pass=true
+WAV s1-A/bob_127.0.0.1_ch0.wav frames=921600 srate=48000 ch=1 rms=0.284280 peak=0.424805 pass=true
+WAV s1-B/alice_ch0.wav frames=921600 srate=48000 ch=1 rms=0.355478 peak=0.522949 pass=true
 WAV s2/refpeer_127.0.0.1_ch0.wav frames=1152000 srate=48000 ch=1 rms=0.284957 peak=0.420166 pass=true
 WAV s3/refpeer_127.0.0.1_ch0.wav frames=921600 srate=48000 ch=1 rms=0.142352 peak=0.214661 pass=true
 WAV s4/refpeer_127.0.0.1_ch0.wav frames=921600 srate=48000 ch=1 rms=0.142352 peak=0.214661 pass=true

@@ -1,0 +1,121 @@
+[    0.053] audio probe: default_playback="MacBook Pro Speakers" native_srate=0
+[    0.137] live audio ON: device="MacBook Pro Speakers" backend=Core Audio srate=48000 (session 48000)
+[    0.137] connecting to 127.0.0.1:20491 as alice
+[    0.137] connected
+[    0.140] S>C 0x00 CHALLENGE challenge=a4f7450a43b9326a caps=0x00000300 ver=0x00020000 keepalive=3s license=0b
+[    0.140] C>S 0x80 AUTH_USER user=alice hash=c7429c962a0786cea348c24b5463abaf606e3e09 caps=0
+[    0.146] S>C 0x01 AUTH_OK user=alice maxchan=8
+[    0.146] C>S 0x82 SET_CHANNEL_INFO n=2
+[    3.154] C>S KEEPALIVE (idle 3008ms)
+[    3.667] S>C 0x02 CONFIG bpm=100 bpi=8
+[    3.667] capture pre-roll dropped: 169440 frames
+[    3.672] interval clock started: 230400 samples (4800ms)
+[    3.672] S>C 0x03 USERINFO nrecords=1
+[    3.672]   user=refpeer@127.0.0.1 ch=0 active=1 name=refpeer-tone flags=0x00
+[    3.672] C>S 0x81 SET_USERMASK user=refpeer@127.0.0.1 mask=0x00000001
+[    3.672] S>C 0xC0 CHAT TOPIC:  | zclient interop demo |  | 
+[    3.693] C>S 0x83 UPLOAD_BEGIN guid=e54a8836f2b059f5d40bf8c6cd4d6f77 chidx=0 interval=0
+[    3.693] C>S 0x84 WRITE guid=e54a8836f2b059f5d40bf8c6cd4d6f77 flags=0 bytes=3552
+[    3.693] C>S 0x83 UPLOAD_BEGIN guid=9eeea76bcb076e6a52afdf073a530c14 chidx=1 interval=0
+[    3.693] C>S 0x84 WRITE guid=9eeea76bcb076e6a52afdf073a530c14 flags=0 bytes=3552
+[    4.653] C>S 0x84 WRITE guid=e54a8836f2b059f5d40bf8c6cd4d6f77 flags=0 bytes=4259
+[    4.653] C>S 0x84 WRITE guid=9eeea76bcb076e6a52afdf073a530c14 flags=0 bytes=4259
+[    5.111] S>C 0x04 DOWNLOAD_BEGIN user=refpeer@127.0.0.1 ch=0 guid=ba73e324c80c5a0307b20245fabaef7f fourcc=0x7647474F
+[    5.518] C>S 0x84 WRITE guid=e54a8836f2b059f5d40bf8c6cd4d6f77 flags=0 bytes=4243
+[    5.518] C>S 0x84 WRITE guid=9eeea76bcb076e6a52afdf073a530c14 flags=0 bytes=4243
+[    6.388] C>S 0x84 WRITE guid=e54a8836f2b059f5d40bf8c6cd4d6f77 flags=0 bytes=4241
+[    6.388] C>S 0x84 WRITE guid=9eeea76bcb076e6a52afdf073a530c14 flags=0 bytes=4241
+[    7.244] C>S 0x84 WRITE guid=e54a8836f2b059f5d40bf8c6cd4d6f77 flags=0 bytes=4215
+[    7.244] C>S 0x84 WRITE guid=9eeea76bcb076e6a52afdf073a530c14 flags=0 bytes=4215
+[    8.100] C>S 0x84 WRITE guid=e54a8836f2b059f5d40bf8c6cd4d6f77 flags=0 bytes=4173
+[    8.100] C>S 0x84 WRITE guid=9eeea76bcb076e6a52afdf073a530c14 flags=0 bytes=4173
+[    8.486] C>S 0x84 WRITE guid=e54a8836f2b059f5d40bf8c6cd4d6f77 flags=1 bytes=2161
+[    8.487] C>S 0x84 WRITE guid=9eeea76bcb076e6a52afdf073a530c14 flags=1 bytes=2161
+[    8.487] interval 0 complete (230400 samples, 4800ms)
+[    8.514] C>S 0x83 UPLOAD_BEGIN guid=b436f4beaa2863b1331a0dfdbf3c6aa2 chidx=0 interval=1
+[    8.514] C>S 0x84 WRITE guid=b436f4beaa2863b1331a0dfdbf3c6aa2 flags=0 bytes=3552
+[    8.514] C>S 0x83 UPLOAD_BEGIN guid=8bebb1027a87bc322d47c658f84775a8 chidx=1 interval=1
+[    8.514] C>S 0x84 WRITE guid=8bebb1027a87bc322d47c658f84775a8 flags=0 bytes=3552
+[    8.667] S>C 0x05 WRITE user=refpeer@127.0.0.1 bytes=9216 flags=0 total=9216
+[    8.667] S>C 0x05 WRITE user=refpeer@127.0.0.1 bytes=2790 flags=1 total=12006
+[    8.667] download complete user=refpeer@127.0.0.1 ch=0 bytes=12006 fourcc=0x7647474F
+[    8.672] decoded user=refpeer@127.0.0.1 ch=0 srate=48000 ch=1 frames=230400 rms=0.142371
+[    8.673] wav open s4/refpeer_127.0.0.1_ch0.wav (srate=48000)
+[    9.355] C>S 0x84 WRITE guid=b436f4beaa2863b1331a0dfdbf3c6aa2 flags=0 bytes=4201
+[    9.355] C>S 0x84 WRITE guid=8bebb1027a87bc322d47c658f84775a8 flags=0 bytes=4201
+[   10.107] S>C 0x04 DOWNLOAD_BEGIN user=refpeer@127.0.0.1 ch=0 guid=5c916bee92932153185aae1c078cf2e7 fourcc=0x7647474F
+[   10.234] C>S 0x84 WRITE guid=b436f4beaa2863b1331a0dfdbf3c6aa2 flags=0 bytes=4206
+[   10.234] C>S 0x84 WRITE guid=8bebb1027a87bc322d47c658f84775a8 flags=0 bytes=4206
+[   11.111] C>S 0x84 WRITE guid=b436f4beaa2863b1331a0dfdbf3c6aa2 flags=0 bytes=4171
+[   11.111] C>S 0x84 WRITE guid=8bebb1027a87bc322d47c658f84775a8 flags=0 bytes=4171
+[   12.031] C>S 0x84 WRITE guid=b436f4beaa2863b1331a0dfdbf3c6aa2 flags=0 bytes=4200
+[   12.031] C>S 0x84 WRITE guid=8bebb1027a87bc322d47c658f84775a8 flags=0 bytes=4200
+[   12.928] C>S 0x84 WRITE guid=b436f4beaa2863b1331a0dfdbf3c6aa2 flags=0 bytes=4194
+[   12.928] C>S 0x84 WRITE guid=8bebb1027a87bc322d47c658f84775a8 flags=0 bytes=4194
+[   13.271] C>S 0x84 WRITE guid=b436f4beaa2863b1331a0dfdbf3c6aa2 flags=1 bytes=2072
+[   13.272] C>S 0x84 WRITE guid=8bebb1027a87bc322d47c658f84775a8 flags=1 bytes=2072
+[   13.272] interval 1 complete (230400 samples, 4800ms)
+[   13.299] C>S 0x83 UPLOAD_BEGIN guid=0a2255265a3e05cb511ea67f870075c3 chidx=0 interval=2
+[   13.299] C>S 0x84 WRITE guid=0a2255265a3e05cb511ea67f870075c3 flags=0 bytes=3552
+[   13.299] C>S 0x83 UPLOAD_BEGIN guid=0f0c4909462ef34b3551ebe2317a5998 chidx=1 interval=2
+[   13.299] C>S 0x84 WRITE guid=0f0c4909462ef34b3551ebe2317a5998 flags=0 bytes=3552
+[   13.664] S>C 0x05 WRITE user=refpeer@127.0.0.1 bytes=9216 flags=0 total=9216
+[   13.664] S>C 0x05 WRITE user=refpeer@127.0.0.1 bytes=2790 flags=1 total=12006
+[   13.664] download complete user=refpeer@127.0.0.1 ch=0 bytes=12006 fourcc=0x7647474F
+[   13.667] decoded user=refpeer@127.0.0.1 ch=0 srate=48000 ch=1 frames=230400 rms=0.142371
+[   14.201] C>S 0x84 WRITE guid=0a2255265a3e05cb511ea67f870075c3 flags=0 bytes=4169
+[   14.201] C>S 0x84 WRITE guid=0f0c4909462ef34b3551ebe2317a5998 flags=0 bytes=4169
+[   15.083] S>C 0x04 DOWNLOAD_BEGIN user=refpeer@127.0.0.1 ch=0 guid=77986bea779de20af55036681cf41d94 fourcc=0x7647474F
+[   15.104] C>S 0x84 WRITE guid=0a2255265a3e05cb511ea67f870075c3 flags=0 bytes=4265
+[   15.104] C>S 0x84 WRITE guid=0f0c4909462ef34b3551ebe2317a5998 flags=0 bytes=4265
+[   15.976] C>S 0x84 WRITE guid=0a2255265a3e05cb511ea67f870075c3 flags=0 bytes=4216
+[   15.976] C>S 0x84 WRITE guid=0f0c4909462ef34b3551ebe2317a5998 flags=0 bytes=4216
+[   16.876] C>S 0x84 WRITE guid=0a2255265a3e05cb511ea67f870075c3 flags=0 bytes=4203
+[   16.876] C>S 0x84 WRITE guid=0f0c4909462ef34b3551ebe2317a5998 flags=0 bytes=4203
+[   17.686] C>S 0x84 WRITE guid=0a2255265a3e05cb511ea67f870075c3 flags=0 bytes=4173
+[   17.686] C>S 0x84 WRITE guid=0f0c4909462ef34b3551ebe2317a5998 flags=0 bytes=4173
+[   18.070] C>S 0x84 WRITE guid=0a2255265a3e05cb511ea67f870075c3 flags=1 bytes=2216
+[   18.071] C>S 0x84 WRITE guid=0f0c4909462ef34b3551ebe2317a5998 flags=1 bytes=2216
+[   18.071] interval 2 complete (230400 samples, 4800ms)
+[   18.096] C>S 0x83 UPLOAD_BEGIN guid=945dbcc20f758971a2a5edac9490c1bc chidx=0 interval=3
+[   18.096] C>S 0x84 WRITE guid=945dbcc20f758971a2a5edac9490c1bc flags=0 bytes=3552
+[   18.096] C>S 0x83 UPLOAD_BEGIN guid=c38863357628f65558130aee120db60c chidx=1 interval=3
+[   18.096] C>S 0x84 WRITE guid=c38863357628f65558130aee120db60c flags=0 bytes=3552
+[   18.667] S>C 0x05 WRITE user=refpeer@127.0.0.1 bytes=9216 flags=0 total=9216
+[   18.667] S>C 0x05 WRITE user=refpeer@127.0.0.1 bytes=2790 flags=1 total=12006
+[   18.667] download complete user=refpeer@127.0.0.1 ch=0 bytes=12006 fourcc=0x7647474F
+[   18.672] decoded user=refpeer@127.0.0.1 ch=0 srate=48000 ch=1 frames=230400 rms=0.142371
+[   18.995] C>S 0x84 WRITE guid=945dbcc20f758971a2a5edac9490c1bc flags=0 bytes=4176
+[   18.996] C>S 0x84 WRITE guid=c38863357628f65558130aee120db60c flags=0 bytes=4176
+[   19.867] C>S 0x84 WRITE guid=945dbcc20f758971a2a5edac9490c1bc flags=0 bytes=4169
+[   19.867] C>S 0x84 WRITE guid=c38863357628f65558130aee120db60c flags=0 bytes=4169
+[   20.054] S>C 0x04 DOWNLOAD_BEGIN user=refpeer@127.0.0.1 ch=0 guid=f992fe4fd767abd5c03b430b572bf45a fourcc=0x7647474F
+[   20.713] C>S 0x84 WRITE guid=945dbcc20f758971a2a5edac9490c1bc flags=0 bytes=4190
+[   20.714] C>S 0x84 WRITE guid=c38863357628f65558130aee120db60c flags=0 bytes=4190
+[   21.566] C>S 0x84 WRITE guid=945dbcc20f758971a2a5edac9490c1bc flags=0 bytes=4218
+[   21.566] C>S 0x84 WRITE guid=c38863357628f65558130aee120db60c flags=0 bytes=4218
+[   22.395] C>S 0x84 WRITE guid=945dbcc20f758971a2a5edac9490c1bc flags=0 bytes=4166
+[   22.395] C>S 0x84 WRITE guid=c38863357628f65558130aee120db60c flags=0 bytes=4166
+[   22.886] C>S 0x84 WRITE guid=945dbcc20f758971a2a5edac9490c1bc flags=1 bytes=2669
+[   22.887] C>S 0x84 WRITE guid=c38863357628f65558130aee120db60c flags=1 bytes=2669
+[   22.887] interval 3 complete (230400 samples, 4800ms)
+[   22.916] C>S 0x83 UPLOAD_BEGIN guid=a5b0016feafbab4868c7af160981f6be chidx=0 interval=4
+[   22.916] C>S 0x84 WRITE guid=a5b0016feafbab4868c7af160981f6be flags=0 bytes=3552
+[   22.916] C>S 0x83 UPLOAD_BEGIN guid=2426c6a989a71d5c83fff1111921bd7b chidx=1 interval=4
+[   22.916] C>S 0x84 WRITE guid=2426c6a989a71d5c83fff1111921bd7b flags=0 bytes=3552
+[   23.667] S>C 0x05 WRITE user=refpeer@127.0.0.1 bytes=9216 flags=0 total=9216
+[   23.667] S>C 0x05 WRITE user=refpeer@127.0.0.1 bytes=2790 flags=1 total=12006
+[   23.667] download complete user=refpeer@127.0.0.1 ch=0 bytes=12006 fourcc=0x7647474F
+[   23.672] decoded user=refpeer@127.0.0.1 ch=0 srate=48000 ch=1 frames=230400 rms=0.142371
+[   23.826] C>S 0x84 WRITE guid=a5b0016feafbab4868c7af160981f6be flags=0 bytes=4205
+[   23.826] C>S 0x84 WRITE guid=2426c6a989a71d5c83fff1111921bd7b flags=0 bytes=4205
+[   24.089] S>C 0xC0 CHAT PART: refpeer@127.0.0.1 |  |  | 
+[   24.708] C>S 0x84 WRITE guid=a5b0016feafbab4868c7af160981f6be flags=0 bytes=4275
+[   24.708] C>S 0x84 WRITE guid=2426c6a989a71d5c83fff1111921bd7b flags=0 bytes=4275
+[   25.582] C>S 0x84 WRITE guid=a5b0016feafbab4868c7af160981f6be flags=0 bytes=4207
+[   25.582] C>S 0x84 WRITE guid=2426c6a989a71d5c83fff1111921bd7b flags=0 bytes=4207
+[   26.013] wav s4/refpeer_127.0.0.1_ch0.wav frames=921600 srate=48000 rms=0.142352 peak=0.214661
+[   26.013] live audio stats: device_frames=1242240 queued_tx=5640 queued_rx=118080
+[   26.013] live audio rings: capture underrun=5219 overrun=0 | playback underrun=438720 overrun=0
+[   26.069] session end: ok=true
+RESULT ok=true err="" msgs_sent=78 msgs_recv=23 bytes_sent=249040 bytes_recv=48568 intervals_uploaded=4 upload_channels=2 upload_chunks=64 upload_bytes=247226 intervals_downloaded=4 download_bytes=48024 samples_decoded=921600 chat_sent=0 chat_received=2 wav_count=1 wav_rms_avg=0.142352 live=true device="MacBook Pro Speakers" dev_srate=48000 capture_frames=1067160 capture_starved=5219 capture_rms=0.006438 capture_peak=0.059840 playback_frames=921600 playback_rms=0.142371 playback_peak=0.214688 audio_underruns=443939 audio_overruns=0

@@ -50,6 +50,9 @@ jobs:
         with:
           version: 0.16.0
 
+      - name: Verify vendored sources still match their upstream pins
+        run: bash vendor/refresh-vendor.sh --check
+
       - name: Unit tests
         run: zig build test --summary all
 

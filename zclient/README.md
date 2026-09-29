@@ -76,14 +76,50 @@ ring boundary, so a silent device cannot fake a passing run. A full transcript
 (protocol messages, timings, per-interval decode results) is written to
 `--transcript`.
 
+## Maintaining this
+
+The short version: **this is a protocol conformance client, not a product.** It
+exists to be a second independent implementation of the frozen protocol, so the
+spec and the server can be checked against something that was not written by
+the same hand. It is not a supported NINJAM client, has no UI, and is not
+intended to grow into one.
+
+What that means for ongoing cost:
+
+| Surface | Cost | Notes |
+| --- | --- | --- |
+| `src/` (Zig, ~3.5k lines) | low | Only changes if the protocol changes. Zig 0.16 churn is the main risk; it is pinned and CI would show it. |
+| `vendor/` | very low | Fully reproducible. `vendor/refresh-vendor.sh --check` (run in CI) proves the tree still matches the pinned upstream downloads. Bumping a dependency is editing two lines in that script and rerunning it. |
+| `demo/run_demo.sh` | low, opt-in | Needs cmake, a C++ toolchain and network on first run (the reference client's ogg/vorbis come via `FetchContent`). It is not run in CI and is not a gate. |
+| `tools/refpeer.cpp` | low | Links the in-tree `libninjam_core.a` / `libninjam_net.a`, so it tracks this repo's CMake targets. If those targets move, this file is the thing to fix — and nothing else depends on it. |
+
+What is explicitly *not* maintained: multi-device input, per-channel sources,
+Linux live audio (the code path needs ALSA headers, but no machine here has
+been able to exercise it), and anything resembling a mixer or UI.
+
+Things that will break it, and what to do:
+
+* **A protocol change.** Update `docs/PROTOCOL.md` first, then `src/proto.zig`;
+  the unit tests are byte-golden against the spec's worked transcript.
+* **A new Zig release.** `build.zig`, `std.Io` usage. CI is the tripwire.
+* **A CVE in libvorbis/libogg/stb/miniaudio.** Change the pin in
+  `refresh-vendor.sh`, rerun it, `--check`, tests, demo.
+* **A server behaviour change.** `demo/run_demo.sh` should fail, with the
+  transcript showing where.
+
+Nothing here is on the critical path for the server or the reference client.
+The worst case if it bit-rotted is that CI goes red on a directory nobody
+depends on.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` has a `zclient` job alongside the C++ matrix: it
-installs Zig 0.16.0, runs `zig build test`, builds the release binary, smoke-
-tests it against a committed evidence WAV, and on Linux cross-builds a static
-musl binary and asserts it is statically linked. macOS exercises the live-audio
-build (miniaudio + Core Audio); Linux builds without it (`-Dlive=false` by
-default there), so no ALSA headers are needed in CI.
+verifies the vendored sources against their upstream pins, installs Zig 0.16.0,
+runs `zig build test`, builds the release binary, smoke-tests it against a
+committed evidence WAV, and on Linux cross-builds a static musl binary and
+asserts it is statically linked. macOS exercises the live-audio build
+(miniaudio + Core Audio); Linux builds without it (`-Dlive=false` by default
+there), so no ALSA headers are needed in CI.
 
 ## Layout
 

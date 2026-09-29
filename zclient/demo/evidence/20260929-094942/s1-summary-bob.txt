@@ -1,0 +1,69 @@
+[    0.000] connecting to 127.0.0.1:20491 as anonymous:bob
+[    0.001] connected
+[    0.007] S>C 0x00 CHALLENGE challenge=950f8e8209e3ff41 caps=0x00000300 ver=0x00020000 keepalive=3s license=0b
+[    0.007] C>S 0x80 AUTH_USER user=anonymous:bob hash=66e476e0c70e074f3b7497f3aa342fee3e092996 caps=0
+[    0.020] S>C 0x01 AUTH_OK user=bob@127.0.0.1 maxchan=2
+[    0.020] C>S 0x82 SET_CHANNEL_INFO n=1
+[    0.020] S>C 0x02 CONFIG bpm=100 bpi=8
+[    0.022] interval clock started: 230400 samples (4800ms)
+[    0.022] S>C 0x03 USERINFO nrecords=1
+[    0.022]   user=alice ch=0 active=1 name=zclient-alice flags=0x00
+[    0.022] C>S 0x81 SET_USERMASK user=alice mask=0x00000001
+[    0.022] S>C 0xC0 CHAT TOPIC:  | zclient interop demo |  | 
+[    0.033] C>S 0x83 UPLOAD_BEGIN guid=632d67854a03d176cc5eb92491d644b9 chidx=0 interval=0
+[    0.033] C>S 0x84 WRITE guid=632d67854a03d176cc5eb92491d644b9 flags=0 bytes=3552
+[    0.033] S>C 0x04 DOWNLOAD_BEGIN user=alice ch=0 guid=8c4250ac84b21a9a469dd85bd10ef85d fourcc=0x7647474F
+[    0.656] S>C 0x05 WRITE user=alice bytes=3552 flags=0 total=3552
+[    0.656] S>C 0xC0 CHAT MSG: alice | hello from alice (zclient) |  | 
+[    2.618] S>C 0x05 WRITE user=alice bytes=4259 flags=0 total=7811
+[    2.660] C>S 0x84 WRITE guid=632d67854a03d176cc5eb92491d644b9 flags=0 bytes=4248
+[    3.018] C>S 0xC0 CHAT MSG: hello from bob (zclient anonymous)
+[    3.023] S>C 0xC0 CHAT MSG: bob@127.0.0.1 | hello from bob (zclient anonymous) |  | 
+[    4.833] C>S 0x84 WRITE guid=632d67854a03d176cc5eb92491d644b9 flags=1 bytes=3709
+[    4.833] interval 0 complete (230400 samples, 4800ms)
+[    4.837] S>C 0x05 WRITE user=alice bytes=3962 flags=1 total=11773
+[    4.837] download complete user=alice ch=0 bytes=11773 fourcc=0x7647474F
+[    4.841] decoded user=alice ch=0 srate=48000 ch=1 frames=230400 rms=0.355520
+[    4.842] wav open s1-B/alice_ch0.wav (srate=48000)
+[    4.845] C>S 0x83 UPLOAD_BEGIN guid=5fb3faebdc48c941ed8ed744435355b9 chidx=0 interval=1
+[    4.845] C>S 0x84 WRITE guid=5fb3faebdc48c941ed8ed744435355b9 flags=0 bytes=3552
+[    4.845] S>C 0x04 DOWNLOAD_BEGIN user=alice ch=0 guid=249950a73fe64d2add0a27a0d70843a7 fourcc=0x7647474F
+[    7.393] S>C 0x05 WRITE user=alice bytes=3552 flags=0 total=3552
+[    7.393] S>C 0x05 WRITE user=alice bytes=4255 flags=0 total=7807
+[    7.456] C>S 0x84 WRITE guid=5fb3faebdc48c941ed8ed744435355b9 flags=0 bytes=4250
+[    9.622] C>S 0x84 WRITE guid=5fb3faebdc48c941ed8ed744435355b9 flags=1 bytes=3715
+[    9.622] interval 1 complete (230400 samples, 4800ms)
+[    9.627] C>S 0x83 UPLOAD_BEGIN guid=ae0f72bad99d41eb3ad214896e04133a chidx=0 interval=2
+[    9.627] C>S 0x84 WRITE guid=ae0f72bad99d41eb3ad214896e04133a flags=0 bytes=3552
+[    9.627] S>C 0x05 WRITE user=alice bytes=3965 flags=1 total=11772
+[    9.627] download complete user=alice ch=0 bytes=11772 fourcc=0x7647474F
+[    9.632] decoded user=alice ch=0 srate=48000 ch=1 frames=230400 rms=0.355579
+[    9.662] S>C 0x04 DOWNLOAD_BEGIN user=alice ch=0 guid=66dc8c043468d6689e0a72d60d5bda03 fourcc=0x7647474F
+[   12.196] S>C 0x05 WRITE user=alice bytes=3552 flags=0 total=3552
+[   12.196] S>C 0x05 WRITE user=alice bytes=4257 flags=0 total=7809
+[   12.260] C>S 0x84 WRITE guid=ae0f72bad99d41eb3ad214896e04133a flags=0 bytes=4250
+[   14.433] C>S 0x84 WRITE guid=ae0f72bad99d41eb3ad214896e04133a flags=1 bytes=3713
+[   14.433] interval 2 complete (230400 samples, 4800ms)
+[   14.436] S>C 0x05 WRITE user=alice bytes=3964 flags=1 total=11773
+[   14.436] download complete user=alice ch=0 bytes=11773 fourcc=0x7647474F
+[   14.438] decoded user=alice ch=0 srate=48000 ch=1 frames=230400 rms=0.355599
+[   14.461] C>S 0x83 UPLOAD_BEGIN guid=7dd77101e82e21673a4dc3dd92a20e6f chidx=0 interval=3
+[   14.461] C>S 0x84 WRITE guid=7dd77101e82e21673a4dc3dd92a20e6f flags=0 bytes=3552
+[   14.466] S>C 0x04 DOWNLOAD_BEGIN user=alice ch=0 guid=e29a11b02a37c525561bfd758651cf68 fourcc=0x7647474F
+[   17.013] S>C 0x05 WRITE user=alice bytes=3552 flags=0 total=3552
+[   17.014] S>C 0x05 WRITE user=alice bytes=4257 flags=0 total=7809
+[   17.056] C>S 0x84 WRITE guid=7dd77101e82e21673a4dc3dd92a20e6f flags=0 bytes=4246
+[   19.230] C>S 0x84 WRITE guid=7dd77101e82e21673a4dc3dd92a20e6f flags=1 bytes=3713
+[   19.230] interval 3 complete (230400 samples, 4800ms)
+[   19.233] C>S 0x83 UPLOAD_BEGIN guid=05735bd5633be245d3d1d8f4bc703266 chidx=0 interval=4
+[   19.233] C>S 0x84 WRITE guid=05735bd5633be245d3d1d8f4bc703266 flags=0 bytes=3552
+[   19.233] S>C 0x05 WRITE user=alice bytes=3965 flags=1 total=11774
+[   19.233] download complete user=alice ch=0 bytes=11774 fourcc=0x7647474F
+[   19.236] decoded user=alice ch=0 srate=48000 ch=1 frames=230400 rms=0.355314
+[   19.239] S>C 0x04 DOWNLOAD_BEGIN user=alice ch=0 guid=a86f1391135010a503002f19a23844ba fourcc=0x7647474F
+[   21.806] S>C 0x05 WRITE user=alice bytes=3552 flags=0 total=3552
+[   21.806] S>C 0x05 WRITE user=alice bytes=4260 flags=0 total=7812
+[   21.870] C>S 0x84 WRITE guid=05735bd5633be245d3d1d8f4bc703266 flags=0 bytes=4255
+[   24.020] wav s1-B/alice_ch0.wav frames=921600 srate=48000 rms=0.355478 peak=0.522949
+[   24.020] session end: ok=true
+RESULT ok=true err="" msgs_sent=23 msgs_recv=26 bytes_sent=54449 bytes_recv=55613 intervals_uploaded=4 upload_channels=1 upload_chunks=14 upload_bytes=53859 intervals_downloaded=4 download_bytes=54904 samples_decoded=921600 chat_sent=1 chat_received=3 wav_count=1 wav_rms_avg=0.355478 live=false device="" dev_srate=0 capture_frames=0 capture_starved=0 capture_rms=0.000000 capture_peak=0.000000 playback_frames=0 playback_rms=0.000000 playback_peak=0.000000 audio_underruns=0 audio_overruns=0
