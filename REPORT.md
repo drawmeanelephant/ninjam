@@ -26,7 +26,7 @@ wall time is about 64 minutes, almost all of it the 10-11 minute drift runs.
 | accumulated drift, +/-200 ppm, worst pair | **-0.00 ms/min** measured vs **-12.00 ms/min** predicted |
 | where it does break: +/-8000 ppm, 11 min | alignment jumps to **7967 ms**, in **2 whole-interval slips**; residual modulo one interval **49.89 ms** |
 | **slip threshold** | a pair slips when accumulated relative clock error reaches **one whole interval** (see §2.1) |
-| slip threshold, 660 s at a 4 s interval | measured boundary **[6000, 8000] ppm** vs predicted **6061 ppm**; 11 slip events all at **1.02-1.07 intervals** |
+| slip threshold, 660 s at a 4 s interval | measured boundary **[6000, 8000] ppm** vs predicted **6061 ppm**; 9 pairs starting aligned bracket it to **0.97-1.07 intervals** (1 outlier at 1.19 from a dropped-marker gap) |
 | slip threshold in usable form | `ppm_rel = interval / duration` = **250 ppm per minute** of session at a 4 s interval |
 | largest accumulated error that did **not** slip / smallest that did | **0.99 iv / 1.32 iv**, 18 pairs, **no exceptions** |
 | alignment error at 1% / 5% / 10% bidirectional message loss | **0.03 / 0.03 / 0.03 ms** - unaffected |
@@ -128,27 +128,58 @@ which started the session aligned to the 2-interval baseline:
 - **No exceptions.** Every pair above 1 interval slipped; every pair below did
   not.
 
-Measuring *when* each slip happens, rather than only whether it happened,
-pins the threshold tighter still. Across 11 independent slip events spanning
-four different offsets (6000, 8000, 12000, 24000 ppm) the accumulated clock
-error at the moment of the first slip was:
+Measuring *when* each slip happens brackets the threshold from both sides. A
+slip is only *observed* at a marker, so the honest measurement is a bracket: the
+accumulated error at the **last marker still aligned** is a lower bound, and the
+accumulated error at the **first marker past the threshold** is an upper bound.
+Every client pair that started the session aligned to the 2-interval baseline:
 
-| ppm rel | first slip t (s) | accumulated (ms) | in intervals |
-|---------|------------------|------------------|---------------|
-| 8000 | 512.1 | 4097 | 1.02 |
-| 8000 | 514.1 | 4112 | 1.03 |
-| 12000 | 344.0 | 4128 | 1.03 |
-| 12000 | 346.0 | 4152 | 1.04 |
-| 8000 | 520.2 | 4161 | 1.04 |
-| 12000 | 348.1 | 4177 | 1.04 |
-| 8000 | 528.2 | 4226 | 1.06 |
-| 24000 | 178.0 | 4271 | 1.07 |
+| scenario | pair | ppm rel | last aligned | lower bound | first slipped | upper bound |
+|----------|------|---------|--------------|-------------|----------------|-------------|
+| drift4000 | 1<-2 | +8000 | t=498.1 | **1.00 iv** | t=514.1 | 1.03 iv |
+| drift6000 | 1<-2 | +12000 | t=330.1 | **0.99 iv** | t=346.0 | 1.04 iv |
+| drift8000 | 1<-0 | +8000 | t=496.2 | **0.99 iv** | t=512.1 | 1.02 iv |
+| drift8000 | 0<-2 | +8000 | t=488.1 | **0.98 iv** | t=528.2 | 1.06 iv |
+| drift8000 | 0<-1 | -8000 | t=500.1 | **1.00 iv** | t=520.2 | 1.04 iv |
+| drift12000 | 1<-0 | +12000 | t=328.1 | **0.98 iv** | t=344.0 | 1.03 iv |
+| drift12000 | 0<-2 | +12000 | t=332.1 | **1.00 iv** | t=348.1 | 1.04 iv |
+| drift12000 | 1<-2 | +24000 | t=162.1 | **0.97 iv** | t=178.0 | 1.07 iv |
+| drift8000 | 1<-2 | +16000 | t=246.1 | **0.98 iv** | t=297.8 | 1.19 iv |
 
-Seven of the eleven land in 1.02-1.04. The small consistent excess over 1.000
-is the measurement floor, not physics: a slip is only *observed* at the next
-marker, and markers are 12 s apart, which at 8000 ppm is itself 0.024 intervals
-of drift. The predicted and observed thresholds agree to within one marker
-period.
+The lower bounds cluster tightly at **0.97-1.00 intervals**; the upper bounds
+are **1.02-1.07** for eight of the nine, with one outlier at 1.19 explained
+below. The threshold is 1.000 intervals, resolved to within one marker period.
+
+Three pairs that slipped are **not** in that table, and the reason matters:
+
+- **`drift8000 1<-2` (+16000 ppm) reads 1.19 iv, not ~1.03.** Its markers
+  k=21..24 were dropped, so the bracket spans a **51.6 s** gap instead of the
+  nominal 12 s. The slip still happened at 1.00; the *observation* of it was
+  just late. Marker gaps in these runs are not uniformly 12 s: the median is
+  12.0 s but the maximum is 87.2 s, because a slipping pair also loses markers.
+  Any single-marker reading is therefore only as good as the gap before it.
+- **Two pairs start a whole interval off before any drift** and so need two
+  intervals of accumulated error to show a transition:
+
+| scenario | pair | ppm rel | last aligned | lower bound | first slipped | upper bound |
+|----------|------|---------|--------------|-------------|----------------|-------------|
+| drift8000 | 2<-1 | -16000 | t=500.1 | 2.00 iv | t=520.4 | 2.08 iv |
+| drift12000 | 2<-1 | -24000 | t=332.0 | 1.99 iv | t=340.2 | 2.04 iv |
+
+  These are the startup-offset pairs described in §8. Their first transition
+  is a *second* boundary crossing relative to where they started, and it lands
+  at exactly 2 intervals as the same one-interval rule predicts.
+- **Some pairs slip back.** Three pairs cross the boundary and later return to
+  the offset they started at (`drift12000 1<-2` goes 0 -> -2 -> -1 -> 0). The
+  offset is not monotonic in accumulated drift, so "slips" is not a one-way
+  ratchet. The first crossing is still the reliable measurement.
+
+So: **9 pairs starting aligned bracket the threshold to 0.97-1.07 intervals, 2
+pairs starting a whole interval off cross at 1.99-2.08, and the 1.19 outlier
+is a dropped-marker artefact, not a disagreement.** Every number above is
+regenerated by `tools/analyze_interval_lab.py` and cross-checked against this
+file by `tools/verify_report_brackets.py`, which fails if the prose and the
+tables disagree.
 
 **The practical form of the result.** For a session of duration `T` at interval
 `L`, a client pair slips when
@@ -298,10 +329,10 @@ Each of these has a tracking issue.
 - **Where exactly does the slip threshold sit?** Answered in §2.1: a pair slips
   when accumulated relative clock error reaches one whole interval, i.e.
   `ppm_rel = L / T`. Measured boundary for 660 s at a 4 s interval is
-  [6000, 8000] ppm against a predicted 6061 ppm, with 11 independent slip
-  events all landing at 1.02-1.07 intervals. The issue's suggested design
-  (durations scaling inversely with ppm) was the wrong way round and would
-  have measured the same point repeatedly.
+  [6000, 8000] ppm against a predicted 6061 ppm. Nine pairs that started
+  aligned bracket the threshold to 0.97-1.07 intervals. The issue's suggested
+  design (durations scaling inversely with ppm) was the wrong way round and
+  would have measured the same point repeatedly.
   [#20](https://github.com/drawmeanelephant/ninjam/issues/20)
 - **The 20 ms residual is attributed to codec and loopback latency but not
   decomposed.** It is suspiciously stable across a 4x change in interval
@@ -330,10 +361,10 @@ Each of these has a tracking issue.
   extra interval boundary while the session is still coming up, and the
   interval model has no way to express a fractional position, so the error
   lands on the interval grid. This is a *join-time* quantisation and it is not
-  in the §2.1 threshold numbers, which use only the pairs that start aligned.
-  It is worth its own experiment: it means a badly-clocked client can be a
-  whole interval out before it has played a note, which is a sharper failure
-  than slow drift. Not yet filed.
+  in the §2.1 threshold numbers, which use only the pairs that start aligned.  It is worth its own experiment: it means
+  a badly-clocked client can be a whole interval out before it has played a
+  note, which is a sharper failure than slow drift.
+  [#25](https://github.com/drawmeanelephant/ninjam/issues/25)
 - **A detector artefact that looks like signal.** `peak` is clamped to 1.0
   (`interval_probe.h`), and the value 1.0000 appears on exactly the post-slip
   rows across every slipping pair. It is the correlation saturating, not the

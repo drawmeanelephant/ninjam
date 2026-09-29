@@ -157,6 +157,13 @@ done
 # --- tables ----------------------------------------------------------------
 echo "== building tables"
 python3 "$ROOT/tools/analyze_interval_lab.py" "$OUT_DIR" > "$OUT_DIR/tables.md"
+
+# The report quotes the slip-threshold brackets in prose. Check them against
+# the tables we just built, so the two cannot drift apart.
+if [ -f "$ROOT/REPORT.md" ]; then
+  echo "== verifying REPORT.md against the tables"
+  python3 "$ROOT/tools/verify_report_brackets.py" "$OUT_DIR"
+fi
 echo
 echo "raw logs:   $OUT_DIR/<scenario>/*.csv"
 echo "tables:     $OUT_DIR/tables.md"

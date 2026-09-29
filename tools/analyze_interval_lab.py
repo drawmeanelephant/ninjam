@@ -201,6 +201,7 @@ class Scenario:
         # mark_period seconds, so this is the first observed marker on the far
         # side of the jump -- an upper bound within one mark period.
         self.slip_t = {}
+        self.slip_bracket = {}
         for p in self.pairs:
             L = self.interval_ms
             if L != L or L <= 0 or p not in self.delay:
@@ -212,11 +213,19 @@ class Scenario:
                     seq.append((v[0][0],
                                 int(round((v[0][1] - self.delay[p]) / L))))
             prev = None
+            prev_t = None
             for t, o in seq:
                 if prev is not None and o != prev:
                     self.slip_t[p] = t
+                    # A slip is only SEEN at a marker, so the honest reading is
+                    # a bracket: the previous marker's time is a lower bound
+                    # and this one an upper bound. The gap between them is
+                    # whatever the marker grid left, which is not always the
+                    # nominal mark_period -- a slipping pair also drops
+                    # markers, and gaps up to 87 s occur.
+                    self.slip_bracket[p] = (prev_t, t)
                     break
-                prev = o
+                prev, prev_t = o, t
 
         # Per-marker spread of the wrapped residuals: the true alignment error
         # of the interval grid, immune to whole-interval slips.
@@ -517,7 +526,15 @@ def main():
     print("if the slips all land near one interval, the interval model is what")
     print("breaks them, and the threshold is predictable from a spec sheet.\n")
     print("`first slip t` is the first marker observed on the far side of the")
-    print("jump, so it is an upper bound within one mark period (12 s).\n")
+    print("jump, so it is an upper bound. The previous marker's time is the")
+    print("matching lower bound, and the two are printed together as a bracket.")
+    print("Do NOT read a single slip time as the threshold: the marker gap is")
+    print("not always the nominal mark_period, because a pair that is slipping")
+    print("also drops markers, and gaps of 50-90 s occur. A pair reading well")
+    print("above 1.0 is usually a wide bracket, not a disagreement.\n")
+    print("Pairs that did not start on the 2-interval baseline are excluded from")
+    print("the comparison -- they carry a whole-interval startup offset (see")
+    print("`start iv`) and so cross at 2.0 by the same rule.\n")
     rows = []
     for n in names:
         s = sc[n]
@@ -525,20 +542,25 @@ def main():
             continue
         for p in s.pairs:
             rel = s.ppm.get(p[0], 0.0) - s.ppm.get(p[1], 0.0)
-            t = s.slip_t.get(p)
-            acc = (abs(rel) * t / 1000.0) if t is not None else float("nan")
+            br = s.slip_bracket.get(p)
+            iv = s.interval_ms
+            acc = (lambda t: abs(rel) * t / 1000.0) if br else None
+            first = sorted(s.by_pair_k.get((p[0], p[1], k)) for k in [s.ks[0]])[0][0][1] if s.ks else 8020.0
+            start_iv = int(round((first - 8020.0) / iv)) if iv > 0 else 0
             rows.append([
                 n, f"{p[0]}<-{p[1]}", f"{rel:+g}",
                 fmt(s.delay.get(p, float("nan"))),
                 s.slips.get(p, "n/a"),
-                fmt(t, 1) if t is not None else "none",
-                fmt(acc, 0) if t is not None else "n/a",
-                fmt(s.interval_ms, 0),
-                fmt(acc / s.interval_ms, 2) if t is not None else "n/a",
+                "%+d" % start_iv,
+                fmt(br[0], 1) if br else "none",
+                fmt(br[1], 1) if br else "none",
+                fmt(acc(br[0]) / iv, 2) if br else "n/a",
+                fmt(acc(br[1]) / iv, 2) if br else "n/a",
+                "yes" if br and start_iv == 0 else ("no" if br else "n/a"),
             ])
     print(table(rows, ["scenario", "pair", "ppm rel", "delay ms", "slips",
-                       "first slip t s", "accumulated ms", "interval ms",
-                       "slip / interval"]))
+                       "start iv", "last aligned s", "first slipped s",
+                       "lo iv", "hi iv", "aligned pair"]))
     print()
 
     # --- 8. integrity ------------------------------------------------------

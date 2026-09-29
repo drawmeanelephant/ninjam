@@ -313,52 +313,61 @@ if the slips all land near one interval, the interval model is what
 breaks them, and the threshold is predictable from a spec sheet.
 
 `first slip t` is the first marker observed on the far side of the
-jump, so it is an upper bound within one mark period (12 s).
+jump, so it is an upper bound. The previous marker's time is the
+matching lower bound, and the two are printed together as a bracket.
+Do NOT read a single slip time as the threshold: the marker gap is
+not always the nominal mark_period, because a pair that is slipping
+also drops markers, and gaps of 50-90 s occur. A pair reading well
+above 1.0 is usually a wide bracket, not a disagreement.
 
-| scenario   | pair | ppm rel | delay ms | slips | first slip t s | accumulated ms | interval ms | slip / interval |
-|------------|------|---------|----------|-------|----------------|----------------|-------------|-----------------|
-| drift12000 | 0<-1 | -12000  | 4020.08  | 0     | none           | n/a            | 4000        | n/a             |
-| drift12000 | 0<-2 | +12000  | 8019.98  | 2     | 348.1          | 4177           | 4000        | 1.04            |
-| drift12000 | 1<-0 | +12000  | 4038.48  | 2     | 344.0          | 4128           | 4000        | 1.03            |
-| drift12000 | 1<-2 | +24000  | 4020.13  | 2     | 178.0          | 4271           | 4000        | 1.07            |
-| drift12000 | 2<-0 | -12000  | 4020.05  | 0     | none           | n/a            | 4000        | n/a             |
-| drift12000 | 2<-1 | -24000  | 4020.11  | 2     | 340.2          | 8164           | 4000        | 2.04            |
-| drift200   | 0<-1 | -200    | 8020.08  | 0     | none           | n/a            | 4000        | n/a             |
-| drift200   | 0<-2 | +200    | 8020.06  | 0     | none           | n/a            | 4000        | n/a             |
-| drift200   | 1<-0 | +200    | 8020.05  | 0     | none           | n/a            | 4000        | n/a             |
-| drift200   | 1<-2 | +400    | 8020.06  | 0     | none           | n/a            | 4000        | n/a             |
-| drift200   | 2<-0 | -200    | 8020.03  | 0     | none           | n/a            | 4000        | n/a             |
-| drift200   | 2<-1 | -400    | 8020.06  | 0     | none           | n/a            | 4000        | n/a             |
-| drift3000  | 0<-1 | -3000   | 4020.06  | 0     | none           | n/a            | 4000        | n/a             |
-| drift3000  | 0<-2 | +3000   | 8020.06  | 0     | none           | n/a            | 4000        | n/a             |
-| drift3000  | 1<-0 | +3000   | 8020.07  | 0     | none           | n/a            | 4000        | n/a             |
-| drift3000  | 1<-2 | +6000   | 8020.09  | 0     | none           | n/a            | 4000        | n/a             |
-| drift3000  | 2<-0 | -3000   | 4020.05  | 0     | none           | n/a            | 4000        | n/a             |
-| drift3000  | 2<-1 | -6000   | 4020.08  | 0     | none           | n/a            | 4000        | n/a             |
-| drift4000  | 0<-1 | -4000   | 4020.09  | 0     | none           | n/a            | 4000        | n/a             |
-| drift4000  | 0<-2 | +4000   | 8020.04  | 0     | none           | n/a            | 4000        | n/a             |
-| drift4000  | 1<-0 | +4000   | 8020.05  | 0     | none           | n/a            | 4000        | n/a             |
-| drift4000  | 1<-2 | +8000   | 8020.02  | 2     | 514.1          | 4112           | 4000        | 1.03            |
-| drift4000  | 2<-0 | -4000   | 4020.05  | 0     | none           | n/a            | 4000        | n/a             |
-| drift4000  | 2<-1 | -8000   | 4020.08  | 0     | none           | n/a            | 4000        | n/a             |
-| drift50    | 0<-1 | -50     | 8020.04  | 0     | none           | n/a            | 4000        | n/a             |
-| drift50    | 0<-2 | +50     | 8020.02  | 0     | none           | n/a            | 4000        | n/a             |
-| drift50    | 1<-0 | +50     | 8020.05  | 0     | none           | n/a            | 4000        | n/a             |
-| drift50    | 1<-2 | +100    | 8020.06  | 0     | none           | n/a            | 4000        | n/a             |
-| drift50    | 2<-0 | -50     | 8020.05  | 0     | none           | n/a            | 4000        | n/a             |
-| drift50    | 2<-1 | -100    | 8020.08  | 0     | none           | n/a            | 4000        | n/a             |
-| drift6000  | 0<-1 | -6000   | 4020.08  | 0     | none           | n/a            | 4000        | n/a             |
-| drift6000  | 0<-2 | +6000   | 8020.04  | 0     | none           | n/a            | 4000        | n/a             |
-| drift6000  | 1<-0 | +6000   | 8020.05  | 0     | none           | n/a            | 4000        | n/a             |
-| drift6000  | 1<-2 | +12000  | 4037.07  | 2     | 346.0          | 4152           | 4000        | 1.04            |
-| drift6000  | 2<-0 | -6000   | 4020.03  | 0     | none           | n/a            | 4000        | n/a             |
-| drift6000  | 2<-1 | -12000  | 4020.06  | 0     | none           | n/a            | 4000        | n/a             |
-| drift8000  | 0<-1 | -8000   | 8020.04  | 1     | 520.2          | 4161           | 4000        | 1.04            |
-| drift8000  | 0<-2 | +8000   | 8020.04  | 2     | 528.2          | 4226           | 4000        | 1.06            |
-| drift8000  | 1<-0 | +8000   | 8020.01  | 2     | 512.1          | 4097           | 4000        | 1.02            |
-| drift8000  | 1<-2 | +16000  | 8019.98  | 2     | 297.8          | 4764           | 4000        | 1.19            |
-| drift8000  | 2<-0 | -8000   | 4020.05  | 0     | none           | n/a            | 4000        | n/a             |
-| drift8000  | 2<-1 | -16000  | 4020.06  | 1     | 520.4          | 8327           | 4000        | 2.08            |
+Pairs that did not start on the 2-interval baseline are excluded from
+the comparison -- they carry a whole-interval startup offset (see
+`start iv`) and so cross at 2.0 by the same rule.
+
+| scenario   | pair | ppm rel | delay ms | slips | start iv | last aligned s | first slipped s | lo iv | hi iv | aligned pair |
+|------------|------|---------|----------|-------|----------|----------------|-----------------|-------|-------|--------------|
+| drift12000 | 0<-1 | -12000  | 4020.08  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift12000 | 0<-2 | +12000  | 8019.98  | 2     | +0       | 332.1          | 348.1           | 1.00  | 1.04  | yes          |
+| drift12000 | 1<-0 | +12000  | 4038.48  | 2     | +0       | 328.1          | 344.0           | 0.98  | 1.03  | yes          |
+| drift12000 | 1<-2 | +24000  | 4020.13  | 2     | +0       | 162.1          | 178.0           | 0.97  | 1.07  | yes          |
+| drift12000 | 2<-0 | -12000  | 4020.05  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift12000 | 2<-1 | -24000  | 4020.11  | 2     | -1       | 332.0          | 340.2           | 1.99  | 2.04  | no           |
+| drift200   | 0<-1 | -200    | 8020.08  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift200   | 0<-2 | +200    | 8020.06  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift200   | 1<-0 | +200    | 8020.05  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift200   | 1<-2 | +400    | 8020.06  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift200   | 2<-0 | -200    | 8020.03  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift200   | 2<-1 | -400    | 8020.06  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift3000  | 0<-1 | -3000   | 4020.06  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift3000  | 0<-2 | +3000   | 8020.06  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift3000  | 1<-0 | +3000   | 8020.07  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift3000  | 1<-2 | +6000   | 8020.09  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift3000  | 2<-0 | -3000   | 4020.05  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift3000  | 2<-1 | -6000   | 4020.08  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift4000  | 0<-1 | -4000   | 4020.09  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift4000  | 0<-2 | +4000   | 8020.04  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift4000  | 1<-0 | +4000   | 8020.05  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift4000  | 1<-2 | +8000   | 8020.02  | 2     | +0       | 498.1          | 514.1           | 1.00  | 1.03  | yes          |
+| drift4000  | 2<-0 | -4000   | 4020.05  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift4000  | 2<-1 | -8000   | 4020.08  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift50    | 0<-1 | -50     | 8020.04  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift50    | 0<-2 | +50     | 8020.02  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift50    | 1<-0 | +50     | 8020.05  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift50    | 1<-2 | +100    | 8020.06  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift50    | 2<-0 | -50     | 8020.05  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift50    | 2<-1 | -100    | 8020.08  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift6000  | 0<-1 | -6000   | 4020.08  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift6000  | 0<-2 | +6000   | 8020.04  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift6000  | 1<-0 | +6000   | 8020.05  | 0     | +0       | none           | none            | n/a   | n/a   | n/a          |
+| drift6000  | 1<-2 | +12000  | 4037.07  | 2     | +0       | 330.1          | 346.0           | 0.99  | 1.04  | yes          |
+| drift6000  | 2<-0 | -6000   | 4020.03  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift6000  | 2<-1 | -12000  | 4020.06  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift8000  | 0<-1 | -8000   | 8020.04  | 1     | +0       | 500.1          | 520.2           | 1.00  | 1.04  | yes          |
+| drift8000  | 0<-2 | +8000   | 8020.04  | 2     | +0       | 488.1          | 528.2           | 0.98  | 1.06  | yes          |
+| drift8000  | 1<-0 | +8000   | 8020.01  | 2     | +0       | 496.2          | 512.1           | 0.99  | 1.02  | yes          |
+| drift8000  | 1<-2 | +16000  | 8019.98  | 2     | +0       | 246.1          | 297.8           | 0.98  | 1.19  | yes          |
+| drift8000  | 2<-0 | -8000   | 4020.05  | 0     | -1       | none           | none            | n/a   | n/a   | n/a          |
+| drift8000  | 2<-1 | -16000  | 4020.06  | 1     | -1       | 500.1          | 520.4           | 2.00  | 2.08  | no           |
 
 ## 8. Log integrity
 

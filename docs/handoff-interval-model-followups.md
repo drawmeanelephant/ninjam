@@ -18,8 +18,8 @@ The headline results, so you do not have to re-derive them:
 - A client does not slide off the grid under clock drift. Its error stays
   pinned to a whole number of intervals and then jumps. The threshold is a
   **product**: a pair slips when accumulated relative clock error reaches one
-  whole interval, i.e. `ppm_rel = interval / duration`. Measured over 11 slip
-  events, all at 1.02–1.07 intervals.
+  whole interval, i.e. `ppm_rel = interval / duration`. Nine pairs that started
+  aligned bracket it to 0.97-1.07 intervals.
 - Message loss and jitter cost **markers, not alignment**. Alignment stays at
   0.03 ms through 10% loss and 40 ms jitter.
 - A late joiner syncs in 8.07 s (2.02 intervals) and lands −0.02 ms off the
@@ -164,7 +164,19 @@ malformed-input surface may already be covered there.
   up, and the interval model has no way to express a fractional position. This
   is a **join-time** quantisation and it is a sharper failure than slow drift: a
   badly-clocked client can be a whole interval out before playing a note.
-  Deserves its own issue and experiment.
+  Deserves its own issue and experiment. It is excluded from the §2.1 threshold
+  numbers, which use only pairs that start aligned; the two affected pairs need
+  two intervals of accumulated error to show a transition and cross at
+  1.99–2.08 iv, exactly as the same one-interval rule predicts.
+- **A single-marker slip reading is only as good as the gap before it.**
+  Marker gaps in these runs are not uniformly 12 s: the median is 12.0 s but
+  the maximum is 87.2 s, because a pair that is slipping also drops markers.
+  One pair reads 1.19 iv instead of ~1.03 purely because markers k=21..24 went
+  missing and the bracket spans 51.6 s. Always bracket the threshold from the
+  last aligned marker as well as the first slipped one, and expect outliers.
+  Related: the offset is **not monotonic** in accumulated drift — three pairs
+  cross the boundary and later return to where they started, so "slips" is not
+  a one-way ratchet and only the first crossing is a clean measurement.
 - **Per-client bias is not separated from real clock difference.** Every
   scenario uses a symmetric `0:+X:-X` triple. An asymmetric set such as
   `0:+37:-211` would separate them. One-line change.
