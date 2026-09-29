@@ -15,19 +15,25 @@
        loop, so the comparison is not skewed by sampling skew.
 
     2. AUDIO DOMAIN (interval_lab_markers.csv)
-       Every client continuously broadcasts a short PRBS burst on a local
+       Every client continuously broadcasts a short tonal burst on a local
        channel. Each client runs one matched filter per *other* client's
        code over its own output and records, for every burst it finds, the
-       position on its own session timeline. The interval model claims
-       that audio emitted at session position P is heard at session
-       position P (one interval later in wall-clock time, same point on
-       the song). So
+       position on its own session timeline. A tone is used rather than a
+       broadband PRBS burst because Vorbis destroys white-noise bursts: a
+       PRBS marker measured perfectly in the self-test and came back at
+       ~0.15 correlation after a real round trip. The tonal marker
+       survives at 0.707, which is 1/sqrt(2) -- see interval_probe.h.
+
+       So
 
            err(listener, emitter, k) = spos_listener(heard) - k*mark_period
 
        is the interval-alignment error, and its change over the run is the
-       drift. The constant part is one interval plus codec and network
-       latency; the analyzer subtracts the median so only drift remains.
+       drift. The constant part is the emission-to-playback delay, which
+       measurement shows to be TWO intervals plus a constant ~20 ms, not
+       one: the server cannot forward an upload until the interval closes,
+       and the client then holds it in a two-deep decode queue. The
+       analyzer subtracts the per-pair median so only drift remains.
 
     A third measurement covers join-in-progress: --late-join=SEC starts an
     extra client SEC seconds into the run and the harness records, for it,
@@ -56,8 +62,14 @@
 #include <vector>
 
 #ifdef _WIN32
+// NOMINMAX before <windows.h>: otherwise windef.h defines min/max as
+// function-like macros, and std::min(...) below expands into garbage.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <process.h>
+#include <direct.h>
 typedef HANDLE lab_proc_t;
 #define LAB_BAD_PROC NULL
 #else
@@ -302,6 +314,18 @@ static double now_s()
     std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
+// directory creation, matching the pattern in ui_snapshot.cpp: MSVC spells
+// it _mkdir and takes no mode argument.
+static int lab_mkdir(const char *path, int mode)
+{
+#ifdef _WIN32
+  (void)mode;
+  return _mkdir(path);
+#else
+  return mkdir(path,(mode_t)mode);
+#endif
+}
+
 // each client gets its own work directory; NJClient scans it for cached
 // remote audio and clients sharing one would trip over each other
 static std::string mkdir_for(const std::string &base, int idx)
@@ -309,7 +333,7 @@ static std::string mkdir_for(const std::string &base, int idx)
   char nb[32];
   snprintf(nb,sizeof(nb),"/client%d",idx);
   std::string p=base+nb;
-  mkdir(p.c_str(),0700);
+  lab_mkdir(p.c_str(),0700);
   return p;
 }
 
@@ -323,7 +347,7 @@ int main(int argc, char **argv)
       "  --clients=N            simulated clients, default 3\n"
       "  --duration=SEC         wall seconds to measure, default 60\n"
       "  --mark-period=SEC      seconds of session time between markers, default 12\n"
-      "  --mark-len=N           PRBS burst length in samples, default 1024\n"
+      "  --mark-len=N           marker burst length in samples, default 1920\n"
       "  --bpi=N --bpm=N        server tempo, default 8/120 (4 s interval)\n"
       "  --ppm=a:b:c            per-client clock offset in ppm\n"
       "  --up-loss=PCT          drop this %% of client->server audio messages\n"
@@ -345,7 +369,7 @@ int main(int argc, char **argv)
 
   JNL::open_socketlib();
 
-  if (mkdir(cfg.outdir.c_str(),0700) && errno != EEXIST)
+  if (lab_mkdir(cfg.outdir.c_str(),0700) && errno != EEXIST)
   {
     fprintf(stderr,"cannot create %s\n",cfg.outdir.c_str());
     return 2;
@@ -540,7 +564,9 @@ int main(int argc, char **argv)
 
       if (c.burst_rem > 0)
       {
-        int w=(int)std::min((long long)c.burst_rem,n);
+        // written out rather than std::min so this does not depend on
+        // NOMINMAX holding for every header in the translation unit
+        int w=(int)((long long)c.burst_rem < (long long)n ? c.burst_rem : n);
         for (int q=0; q < w; q ++)
           g_in[0][q]=g_in[1][q]=c.mark[c.burst_pos+q];
         c.burst_pos+=w;

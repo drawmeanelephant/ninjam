@@ -5,11 +5,14 @@
     what is conditioned and why it is conditioned at message granularity.
 */
 
-#include "netcond.h"
-#include "mpb.h"
-
+// stdlib.h first: mpb.h pulls in WDL/heapbuf.h, which calls malloc/free/
+// realloc and does not include stdlib.h itself. Same reason the fuzzer
+// needs it (see commit f32859b7).
 #include <stdlib.h>
 #include <math.h>
+
+#include "netcond.h"
+#include "mpb.h"
 
 #ifdef _WIN32
 #include <windows.h>
