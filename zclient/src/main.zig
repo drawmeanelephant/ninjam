@@ -20,6 +20,11 @@ fn printUsage(io: std.Io) void {
         \\    --transcript FILE  transcript log path (default <out-dir>/transcript.log)
         \\    --chat TEXT        send a public MSG after joining
         \\    --chat-delay S     seconds before the MSG (default 1.5)
+        \\    --live             capture the local device and play the decoded
+        \\                       peer mix through it (Phase B)
+        \\    --live-period N    device period in frames (default 480 = 10 ms)
+        \\    --audio-device ID  miniaudio device id (default: system default)
+        \\    --play-wav FILE    dump the post-mix signal handed to the device
         \\  zclient check-wav FILE [--min-rms R]   analyze a WAV; exit 1 if rms < R
         \\
     ;
@@ -121,6 +126,16 @@ fn cmdJoin(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, argv: [
             const secs = std.fmt.parseFloat(f64, next orelse fail(io, "--chat-delay needs a value", .{})) catch fail(io, "bad --chat-delay", .{});
             opts.chat_delay_ms = @intFromFloat(secs * 1000.0);
             i += 1;
+        } else if (std.mem.eql(u8, a, "--live")) {
+            opts.live = true;
+        } else if (std.mem.eql(u8, a, "--live-period")) {
+            opts.live_period = parseInto(u32, next orelse fail(io, "--live-period needs a value", .{})) catch fail(io, "bad --live-period", .{});
+        } else if (std.mem.eql(u8, a, "--audio-device")) {
+            opts.live_device = next orelse fail(io, "--audio-device needs a value", .{});
+            i += 1;
+        } else if (std.mem.eql(u8, a, "--play-wav")) {
+            opts.play_wav_path = next orelse fail(io, "--play-wav needs a value", .{});
+            i += 1;
         } else {
             fail(io, "unknown option '{s}'", .{a});
         }
@@ -145,6 +160,10 @@ fn cmdJoin(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, argv: [
     n += (std.fmt.bufPrint(w[n..], " intervals_uploaded={d} upload_chunks={d} upload_bytes={d}", .{ stats.intervals_uploaded, stats.upload_chunks, stats.upload_bytes }) catch return).len;
     n += (std.fmt.bufPrint(w[n..], " intervals_downloaded={d} download_bytes={d} samples_decoded={d}", .{ stats.intervals_downloaded, stats.download_bytes, stats.samples_decoded }) catch return).len;
     n += (std.fmt.bufPrint(w[n..], " chat_sent={d} chat_received={d} wav_count={d} wav_rms_avg={d:.6}", .{ stats.chat_sent, stats.chat_received, stats.wav_count, if (stats.wav_count > 0) stats.wav_rms_sum / @as(f64, @floatFromInt(stats.wav_count)) else 0.0 }) catch return).len;
+    n += (std.fmt.bufPrint(w[n..], " live={} device=\"{s}\" dev_srate={d}", .{ stats.live, stats.deviceName(), stats.device_srate }) catch return).len;
+    n += (std.fmt.bufPrint(w[n..], " capture_frames={d} capture_starved={d} capture_rms={d:.6} capture_peak={d:.6}", .{ stats.capture_frames, stats.capture_zero_frames, session.Stats.rms(stats.capture_frames, stats.capture_energy), stats.capture_peak }) catch return).len;
+    n += (std.fmt.bufPrint(w[n..], " playback_frames={d} playback_rms={d:.6} playback_peak={d:.6}", .{ stats.playback_frames, session.Stats.rms(stats.playback_frames, stats.playback_energy), stats.playback_peak }) catch return).len;
+    n += (std.fmt.bufPrint(w[n..], " audio_underruns={d} audio_overruns={d}", .{ stats.rx_underruns, stats.rx_overruns }) catch return).len;
     n += (std.fmt.bufPrint(w[n..], "\n", .{}) catch return).len;
     std.Io.File.stdout().writeStreamingAll(io, w[0..n]) catch {};
 

@@ -12,4 +12,7 @@ test {
     std.testing.refAllDecls(@import("session.zig"));
     std.testing.refAllDecls(@import("main.zig"));
     std.testing.refAllDecls(@import("log.zig"));
+    // audio.zig owns the live-audio ring/resampler tests; imported (not
+    // refAllDecls) so `zig build test -Dlive=false` still links without miniaudio
+    _ = @import("audio.zig");
 }

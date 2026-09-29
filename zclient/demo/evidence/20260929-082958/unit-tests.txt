@@ -1,0 +1,6 @@
+Build Summary: 4/4 steps succeeded; 25/25 tests passed
+test success
++- run test zclient-tests 25 pass (25 total) 25ms MaxRSS:9M
+   +- compile test zclient-tests Debug native cached 66ms MaxRSS:35M
+      +- options cached
+

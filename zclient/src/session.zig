@@ -11,6 +11,7 @@ const wavmod = @import("wav.zig");
 const vorbis = @import("vorbis.zig");
 const logmod = @import("log.zig");
 const clock = @import("clock.zig");
+const audio = @import("audio.zig");
 
 const Fixed = bufmod.Fixed;
 const Buf = bufmod.Buf;
@@ -35,6 +36,18 @@ pub const Options = struct {
     chat_delay_ms: i64 = 1_500,
     /// libvorbis VBR quality (reference client uses 0.0 for 64 kbps mono)
     quality: f32 = 0.0,
+
+    // ---- Phase B: live audio ----
+    /// capture the local device instead of generating --source, and play the
+    /// decoded peer mix out of it. Falls back to --source + WAV dumps when no
+    /// device can be opened.
+    live: bool = false,
+    /// device period in frames (0 = backend default)
+    live_period: u32 = 480,
+    /// optional miniaudio device id (name or index), null = system default
+    live_device: ?[]const u8 = null,
+    /// optional WAV dump of the exact post-mix signal handed to the device
+    play_wav_path: ?[]const u8 = null,
 };
 
 pub const Stats = struct {
@@ -60,6 +73,31 @@ pub const Stats = struct {
 
     wav_count: u32 = 0,
     wav_rms_sum: f64 = 0.0,
+
+    // live audio (Phase B) — energy is measured on the session thread as the
+    // samples cross the ring boundary, so a silent device cannot fake it
+    live: bool = false,
+    device_name: [128]u8 = undefined,
+    device_name_len: usize = 0,
+    device_srate: u32 = 0,
+    capture_frames: u64 = 0,
+    capture_zero_frames: u64 = 0,
+    capture_peak: f32 = 0,
+    capture_energy: f64 = 0,
+    playback_frames: u64 = 0,
+    playback_peak: f32 = 0,
+    playback_energy: f64 = 0,
+    rx_underruns: u64 = 0,
+    rx_overruns: u64 = 0,
+
+    pub fn deviceName(self: *const Stats) []const u8 {
+        return self.device_name[0..self.device_name_len];
+    }
+
+    pub fn rms(frames: u64, energy: f64) f64 {
+        if (frames == 0) return 0;
+        return @sqrt(energy / @as(f64, @floatFromInt(frames)));
+    }
 
     fn fail(self: *Stats, comptime fmt: []const u8, args: anytype) void {
         self.ok = false;
@@ -176,6 +214,10 @@ pub const Session = struct {
     hex_scratch: [64]u8 = undefined,
     hex_scratch2: [64]u8 = undefined,
 
+    dev: ?*audio.Device = null,
+    play_writer: wavmod.WavWriter = undefined,
+    play_wav_active: bool = false,
+
     pub fn init(alloc: std.mem.Allocator, io: std.Io, opts: Options) !Session {
         var s = Session{
             .alloc = alloc,
@@ -198,6 +240,7 @@ pub const Session = struct {
 
     pub fn deinit(self: *Session) void {
         self.closeWavs();
+        self.closeLive();
         for (self.locals) |*lc| {
             if (lc.enc) |e| e.destroy();
             lc.pending.deinit();
@@ -300,6 +343,117 @@ pub const Session = struct {
         }
     }
 
+    // ---- live audio (Phase B) --------------------------------------------------
+
+    fn openLive(self: *Session) void {
+        if (!self.opts.live) return;
+        if (!audio.enabled) {
+            self.log.line("live audio requested but this build has live=false; using --source", .{});
+            return;
+        }
+        var probe: [256]u8 = undefined;
+        const p = audio.Device.probePlayback(&probe);
+        self.log.line("audio probe: default_playback=\"{s}\" native_srate={d}", .{ p.name, p.srate });
+
+        const id: ?[*:0]const u8 = if (self.opts.live_device) |d| @ptrCast(d) else null;
+        self.dev = audio.Device.open(self.alloc, self.opts.srate, self.opts.live_period, id) catch |e| {
+            self.log.line("live audio UNAVAILABLE ({s}: {s}); falling back to --source", .{
+                @errorName(e), audio.Device.lastError(audio.last_open_error),
+            });
+            return;
+        };
+        const d = self.dev.?;
+        const n = @min(d.nameSlice().len, self.stats.device_name.len);
+        @memcpy(self.stats.device_name[0..n], d.nameSlice()[0..n]);
+        self.stats.device_name_len = n;
+        self.stats.device_srate = d.dev_srate;
+        self.stats.live = true;
+        self.log.line("live audio ON: device=\"{s}\" backend={s} srate={d} (session {d}){s}", .{
+            d.nameSlice(),                                               d.backend(), d.dev_srate, self.opts.srate,
+            if (d.dev_srate == self.opts.srate) "" else " [resampling]",
+        });
+
+        if (self.opts.play_wav_path) |path| {
+            self.play_writer = wavmod.WavWriter.init(self.alloc, self.io, self.opts.srate, 1);
+            self.play_writer.open(path) catch |e| {
+                self.log.line("playback wav open '{s}' failed: {s}", .{ path, @errorName(e) });
+                return;
+            };
+            self.play_wav_active = true;
+            self.log.line("playback wav open {s}", .{path});
+        }
+    }
+
+    fn closeLive(self: *Session) void {
+        // comptime-gated: with -Dlive=false no device can ever have opened,
+        // and this keeps the miniaudio symbols out of the link entirely
+        if (!audio.enabled) return;
+        if (self.play_wav_active) {
+            self.play_writer.close() catch |e| {
+                self.log.line("playback wav close failed: {s}", .{@errorName(e)});
+            };
+            if (self.opts.play_wav_path) |p| {
+                if (wavmod.analyzeWavFile(self.io, p)) |a| {
+                    self.log.line("playback wav {s} frames={d} srate={d} rms={d:.6} peak={d:.6}", .{
+                        p, a.frames, a.srate, a.rms, a.peak,
+                    });
+                } else |_| {}
+            }
+            self.play_writer.deinit();
+            self.play_wav_active = false;
+        }
+        if (self.dev) |d| {
+            const tx = d.txStats();
+            const rx = d.rxStats();
+            self.log.line("live audio stats: device_frames={d} queued_tx={d} queued_rx={d}", .{
+                d.framesSeen(), d.queuedCapture(), d.queuedPlayback(),
+            });
+            self.log.line("live audio rings: capture underrun={d} overrun={d} | playback underrun={d} overrun={d}", .{
+                tx.under, tx.over, rx.under, rx.over,
+            });
+            self.stats.rx_underruns = tx.under + rx.under;
+            self.stats.rx_overruns = tx.over + rx.over;
+            d.deinit(self.alloc);
+            self.dev = null;
+        }
+    }
+
+    /// The device has been capturing since we opened it, but the interval clock
+    /// only starts when the server advertises BPM/BPI (a few seconds later).
+    /// Uploading that pre-roll would push audio several seconds stale, so drop
+    /// it and let the uplink start at the top of interval 0.
+    fn dropCapturePreRoll(self: *Session) void {
+        const d = self.dev orelse return;
+        const dropped = d.flushCapture();
+        if (dropped > 0) self.log.line("capture pre-roll dropped: {d} frames", .{dropped});
+    }
+
+    /// Take one block of captured audio out of the device ring, filling any
+    /// shortfall with silence, and account for it. Runs once per encode step.
+    fn pullCapture(self: *Session, d: *audio.Device, block: []f32) void {
+        const got = d.readCapture(block);
+        for (block[0..got]) |s| {
+            const a = @abs(s);
+            if (a > self.stats.capture_peak) self.stats.capture_peak = a;
+            self.stats.capture_energy += @as(f64, s) * @as(f64, s);
+        }
+        self.stats.capture_frames += got;
+        self.stats.capture_zero_frames += block.len - got;
+    }
+
+    /// Hand decoded peer audio to the device (and the optional WAV mirror).
+    fn pushPlayback(self: *Session, mono: []const f32) void {
+        const d = self.dev orelse return;
+        for (mono) |s| {
+            const a = @abs(s);
+            if (a > self.stats.playback_peak) self.stats.playback_peak = a;
+            self.stats.playback_energy += @as(f64, s) * @as(f64, s);
+        }
+        self.stats.playback_frames += mono.len;
+        d.writePlayback(mono);
+        if (self.play_wav_active) self.play_writer.writeFloats(mono) catch {};
+    }
+
     // ---- connection ----------------------------------------------------------
 
     fn send(self: *Session, mtype: u8, payload: []const u8) !void {
@@ -359,13 +513,23 @@ pub const Session = struct {
         const target = @min(elapsed_samples, self.interval_len_samples);
 
         while (self.locals[0].produced < target) {
+            // all channels advance in lockstep, so every channel encodes the
+            // same number of samples per step
+            const n0: u64 = @min(encode_block_samples, @min(target - self.locals[0].produced, self.interval_len_samples - self.locals[0].produced));
+            const n: usize = @intCast(n0);
+
+            // Live capture is pulled once per step and shared by every channel:
+            // one pull per channel would hand each channel a different slice of
+            // the device ring and slowly pull them out of time with each other.
+            var live_block: [encode_block_samples]f32 = undefined;
+            if (self.dev) |d| self.pullCapture(d, live_block[0..n]);
+
             for (self.locals) |*lc| {
                 if (!lc.broadcast) continue;
-                const remaining_interval = self.interval_len_samples - lc.produced;
-                const until_target = target - lc.produced;
-                const n: usize = @intCast(@min(encode_block_samples, @min(until_target, remaining_interval)));
                 var block: [encode_block_samples]f32 = undefined;
-                switch (self.opts.source) {
+                if (self.dev != null) {
+                    @memcpy(block[0..n], live_block[0..n]);
+                } else switch (self.opts.source) {
                     .tone => |t| {
                         const dphi = 2.0 * std.math.pi * t.freq / @as(f32, @floatFromInt(self.opts.srate));
                         for (block[0..n]) |*s| {
@@ -385,8 +549,6 @@ pub const Session = struct {
                 };
                 try lc.pending.add(out.items);
             }
-            // all channels produced the same n; advance uniformly
-            const n0: u64 = @intCast(@min(encode_block_samples, @min(target - self.locals[0].produced, self.interval_len_samples - self.locals[0].produced)));
             for (self.locals) |*lc| {
                 lc.produced += n0;
             }
@@ -575,6 +737,7 @@ pub const Session = struct {
                 return;
             };
             try out.writer.writeFloats(mono);
+            self.pushPlayback(mono);
         }
         d.active = false;
         d.buf.clear();
@@ -671,6 +834,7 @@ pub const Session = struct {
             self.interval_len_samples = @intCast(@divTrunc(@as(u64, self.opts.srate) * @as(u64, cfg.bpi) * 60, @as(u64, cfg.bpm)));
             self.interval_start_ns = clock.nowNs(self.io);
             self.interval_idx = 0;
+            self.dropCapturePreRoll();
             try self.startIntervalEncoders();
             self.log.line("interval clock started: {d} samples ({d}ms)", .{
                 self.interval_len_samples, self.interval_len_samples * 1000 / self.opts.srate,
@@ -752,6 +916,8 @@ pub const Session = struct {
     pub fn run(self: *Session) !Stats {
         std.Io.Dir.cwd().createDirPath(self.io, self.opts.out_dir) catch {};
 
+        self.openLive();
+
         var hostbuf: [256]u8 = undefined;
         const hostport = std.fmt.bufPrint(&hostbuf, "{s}:{d}", .{ self.opts.host, self.opts.port }) catch "host";
         self.log.line("connecting to {s} as {s}", .{ hostport, self.opts.user });
@@ -817,6 +983,7 @@ pub const Session = struct {
         }
 
         self.closeWavs();
+        self.closeLive();
         self.log.line("session end: ok={}", .{self.stats.ok});
         return self.stats;
     }
