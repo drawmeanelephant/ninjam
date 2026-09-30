@@ -257,6 +257,19 @@ struct SimClient
   long long t0;            // sample index at which this client's session position is 0
   bool     audio_started;
 
+  // Startup record (issue #25). Each client's session position is its own
+  // sample counter, zeroed when its audio starts, so session position 0 sits
+  // at a wall time that depends on when THAT client's audio began. Two
+  // clients therefore run on grids whose phase differs by however far apart
+  // they started. Recording the origin per client is what makes the marker
+  // offsets interpretable: the emission-to-playback delay a pair measures is
+  // the two-interval pipeline plus the gap between the two session origins.
+  double   t_audio_start_s;   // wall seconds since epoch at audio start
+  double   ppm_eff;           // offset in force right now (--ppm-ramp)
+  int      loops_seen;        // interval boundaries observed since audio start
+  double   t_first_iv_s;      // wall seconds at the first interval boundary
+  double   first_iv_spos_ms;  // session position at that boundary
+
   // marker emission
   std::vector<float> mark;    // this client's windowed tone burst
   int    mark_freq;
@@ -285,6 +298,7 @@ struct SimClient
 
   SimClient()
     : idx(0), ppm(0.0), mark_freq(0), steady_phase(0.0), budget(0.0), t_last(0.0), processed(0), t0(0), audio_started(false),
+      t_audio_start_s(-1.0), ppm_eff(0.0), loops_seen(0), t_first_iv_s(-1.0), first_iv_spos_ms(-1.0),
       next_k(0.0), burst_rem(0), burst_pos(0), markers_emitted(0),
       markers_skipped(0), started(false), channel_made(false), t_start_s(0.0), t_connected_s(-1.0),
       t_status_ok_s(-1.0), t_first_remote_audio_s(-1.0), t_first_marker_s(-1.0),
@@ -406,6 +420,12 @@ int main(int argc, char **argv)
       "  --mark-len=N           marker burst length in samples, default 1920\n"
       "  --bpi=N --bpm=N        server tempo, default 8/120 (4 s interval)\n"
       "  --ppm=a:b:c            per-client clock offset in ppm\n"
+      "  --ppm-ramp=SEC         dial each client's ppm in from 0 over SEC seconds of\n"
+      "                         session time, starting when its audio begins; 0\n"
+      "                         applies the nominal ppm from the first sample\n"
+      "  --start-offset=a:b:c   seconds to hold each client's audio start back after\n"
+      "                         Connect(), which delays its session position 0 and\n"
+      "                         so shifts its interval grid against its peers\n"
       "  --up-loss=PCT          drop this %% of client->server audio messages\n"
       "  --up-delay=MS --up-jitter=MS\n"
       "  --down-loss=PCT --down-delay=MS --down-jitter=MS   (applied in the server)\n"           "  --client-delay=a:b:c   added one-way latency per client, ms, applied\n"
@@ -578,11 +598,28 @@ int main(int argc, char **argv)
     {
       SimClient &c=sc[live[si]];
 
+      // How much clock offset is in force right now. With --ppm-ramp the
+      // nominal offset is dialled in linearly from zero over the ramp window,
+      // which starts when this client's own audio starts. Before audio
+      // starts there is no drift at all: the session counter is not running
+      // yet, so the rate it would run at is unobservable and pretending
+      // otherwise would only perturb the startup path we are trying to hold
+      // still.
+      const double ramp_el = c.audio_started ? (t - c.t_audio_start_s) : 0.0;
+      double ppm_frac = 1.0;
+      if (cfg.ppm_ramp > 0.0)
+      {
+        if (ramp_el <= 0.0)             ppm_frac = 0.0;
+        else if (ramp_el >= cfg.ppm_ramp) ppm_frac = 1.0;
+        else                            ppm_frac = ramp_el / cfg.ppm_ramp;
+      }
+      c.ppm_eff = c.ppm * ppm_frac;
+
       // how many samples are due at this client's own (drifted) rate
       double dt=t-c.t_last;
       c.t_last=t;
       if (dt < 0.0) dt=0.0;
-      c.budget += LAB_SRATE*dt*(1.0 + c.ppm*1e-6);
+      c.budget += LAB_SRATE*dt*(1.0 + c.ppm_eff*1e-6);
       long long n=(long long)c.budget;
       c.budget -= (double)n;
       if (n > CHUNK_MAX) n=CHUNK_MAX;
@@ -660,10 +697,19 @@ int main(int argc, char **argv)
       // m_audio_enable is set by CONFIG_CHANGE_NOTIFY, and from then on
       // NJClient advances its session position one sample per sample
       // given to AudioProc. Sample index c.t0 is session position 0.
-      if (!c.audio_started && c.client.IsAudioRunning())
+      //
+      // --start-offset holds that edge back by a fixed number of seconds per
+      // client, which moves the client's whole interval grid later in wall
+      // time than its peers without changing how fast the grid is traversed.
+      // A grid that starts late is a different failure from a clock that runs
+      // fast, and only one of them is a defect.
+      const double start_gate = c.t_start_s +
+        (c.idx < (int)cfg.start_offset.size() ? cfg.start_offset[c.idx] : 0.0);
+      if (!c.audio_started && c.client.IsAudioRunning() && t >= start_gate)
       {
         c.audio_started=true;
         c.t0=c.processed;
+        c.t_audio_start_s=t;
         c.next_k=cfg.mark_period; // first marker one period in
       }
 
@@ -815,6 +861,21 @@ int main(int argc, char **argv)
         }
       }
 
+      // First interval boundary after the clock starts. This is the moment the
+      // grid this client will play on is fixed, and the session position read
+      // here is the direct test of whether a whole interval was consumed on the
+      // way up (issue #25). It is not: m_interval_pos starts at -1, so the very
+      // first AudioProc chunk opens interval 1 immediately, and this reads
+      // ~0.001 of an interval in every run. Recorded anyway, because "no client
+      // crosses an extra boundary at start-up" is a structural claim about the
+      // client and should not rest on reading the code.
+      if (c.loops_seen == 0 && c.client.GetLoopCount() > 0)
+      {
+        c.loops_seen=c.client.GetLoopCount();
+        c.t_first_iv_s=t-t_epoch;
+        c.first_iv_spos_ms=(double)c.client.GetSessionPosition();
+      }
+
       c.processed+=n;
       add_cond(c.cond,NJCond::get_stats());
     }
@@ -954,6 +1015,8 @@ int main(int argc, char **argv)
     fprintf(fp,"down_delay_ms %g\n",cfg.down_delay);
     fprintf(fp,"down_jitter_ms %g\n",cfg.down_jitter);
     fprintf(fp,"client_delay_ms %s\n",cfg.client_delay_list.c_str());
+    fprintf(fp,"ppm_ramp_s %g\n",cfg.ppm_ramp);
+    fprintf(fp,"start_offset_s %s\n",cfg.start_offset_list.c_str());
     fprintf(fp,"down_trunc_pct %g\n",cfg.down_trunc_pct);
     fprintf(fp,"down_trunc_bytes %d\n",cfg.down_trunc_bytes);
     fprintf(fp,"down_drop_pct %g\n",cfg.down_drop_pct);
@@ -996,6 +1059,31 @@ int main(int argc, char **argv)
     fclose(fp);
   }
 
+  // Startup record (issue #25). One row per client: when its session clock
+  // started in wall time, when its first interval boundary fell, and what its
+  // session position read there. The marker offsets are only interpretable
+  // next to these numbers -- a pair measuring one interval less than the
+  // two-interval pipeline is exactly a pair whose session origins are one
+  // interval apart, and this is where that is written down.
+  const std::string stp=cfg.outdir+"/"+cfg.tag+"_start.csv";
+  fp=fopen(stp.c_str(),"w");
+  if (fp)
+  {
+    fprintf(fp,"idx,name,ppm,ppm_eff_end,ppm_ramp_s,start_offset_s,"
+               "t_audio_start_s,t_first_iv_s,first_iv_spos_ms,interval_ms\n");
+    for (size_t si=0; si < live.size(); si ++)
+    {
+      SimClient &c=sc[live[si]];
+      const double soff=(c.idx<(int)cfg.start_offset.size())
+        ? cfg.start_offset[c.idx] : 0.0;
+      fprintf(fp,"%d,%s,%g,%.4f,%g,%.3f,%.3f,%.3f,%.1f,%.3f\n",
+        c.idx,c.name.c_str(),c.ppm,c.ppm_eff,cfg.ppm_ramp,soff,
+        c.t_audio_start_s,c.t_first_iv_s,c.first_iv_spos_ms,
+        interval_s*1000.0);
+    }
+    fclose(fp);
+  }
+
   printf("tag=%s duration=%.1fs markers=%zu clock_rows=%zu trunc_rows=%zu\n",
     cfg.tag.c_str(),t_total,markers.size(),clocks.size(),truncs.size());
   for (size_t si=0; si < live.size(); si ++)
@@ -1007,8 +1095,16 @@ int main(int argc, char **argv)
       c.markers_emitted,c.markers_decoded,
       c.cond.audio_dropped,c.cond.audio_seen,
       c.cond.audio_truncated,c.cond.trunc_bytes,c.cond.rx_dropped);
+    // session-clock origin relative to the first client to start. A pair
+    // whose two entries differ by a whole interval is a pair that will
+    // measure one interval less than the two-interval pipeline.
+    printf("    start: audio=%+.3fs first_iv=%+.3fs iv_spos=%.1fms (ppm_eff=%+.4g)\n",
+      c.t_audio_start_s - sc[live[0]].t_audio_start_s,
+      c.t_first_iv_s < 0.0 ? -1.0 : c.t_first_iv_s - sc[live[0]].t_first_iv_s,
+      c.first_iv_spos_ms, c.ppm_eff);
   }
-  printf("  logs: %s, %s, %s, %s, %s\n",mp.c_str(),cp.c_str(),sp.c_str(),cp2.c_str(),tp2.c_str());
+  printf("  logs: %s, %s, %s, %s, %s, %s\n",
+         mp.c_str(),cp.c_str(),sp.c_str(),cp2.c_str(),tp2.c_str(),stp.c_str());
 
   for (int i=0; i < nslots; i ++) sc[i].client.Disconnect();
   delete[] sc;

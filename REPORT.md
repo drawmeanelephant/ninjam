@@ -8,9 +8,9 @@ Measured, not assumed. Every number below comes from a raw log in
 ```
 
 That builds, runs the detector self-test (and refuses to produce numbers if
-it fails), runs all 19 scenarios, and regenerates `results/tables.md`. Total
-wall time is about 145 minutes, dominated by the eight 11-minute drift runs.
-`./tools/run_interval_lab.sh --list` prints the scenario names;
+it fails), runs all 32 core scenarios, and regenerates `results/tables.md`.
+Total wall time is about 145 minutes, dominated by the eight 11-minute drift
+runs. `./tools/run_interval_lab.sh --list` prints the scenario names;
 `--only NAME[,NAME]` runs a subset; `--quick` shortens the durations.
 
 ## Headline numbers
@@ -218,7 +218,7 @@ Three pairs that slipped are **not** in that table, and the reason matters:
 | drift8000 | 2<-1 | -16000 | t=500.1 | 2.00 iv | t=520.4 | 2.08 iv |
 | drift12000 | 2<-1 | -24000 | t=332.0 | 1.99 iv | t=340.2 | 2.04 iv |
 
-  These are the startup-offset pairs described in §10. Their first transition
+  These are the startup-offset pairs described in §2.3. Their first transition
   is a *second* boundary crossing relative to where they started, and it lands
   at exactly 2 intervals as the same one-interval rule predicts.
 - **Some pairs slip back.** Three pairs cross the boundary and later return to
@@ -340,8 +340,128 @@ to a 4 s tempo or to 3000 ppm - it is in **all six** of the new runs, at both
 new tempos and every offset tried. How many pairs get it does vary with the
 tempo (3 of 6 at 8 s, 1-2 of 6 at 2 s), but `2<-1` is offset in every single
 run, and at 4 s and 8 s the offset pairs are the same three (`0<-1`, `2<-0`,
-`2<-1`) every time. It looks like a property of the session start-up and of
-which client that is, not of the interval or of the injected error.
+`2<-1`) every time. §2.3 is where that gets explained: it is not a property of
+start-up at all.
+
+### 2.3 The whole-interval offset a pair starts with is the grid, not a start-up transient
+
+[#25](https://github.com/drawmeanelephant/ninjam/issues/25) recorded a sharp
+failure mode: in every drift run at 3000 ppm and above, some pairs measure
+4020 ms where the rest measure 8020 ms, **on their very first marker** - a
+whole interval of misalignment present at t=0, before a millisecond of clock
+error has accumulated, with no gradual onset for anything to ramp into. The
+issue proposed three explanations and named the experiment that would separate
+them. All three are now settled, and the answer is the middle one.
+
+**It is not a start-up transient.** Two measurements kill it. First, no client
+starts early or late, and no interval is consumed getting there: the harness
+now records each client's session-clock origin, and in every run that records
+it all three clients begin consuming audio within the same pump window, and
+each client's first interval boundary falls at session position **2.0 ms -
+0.001 of an interval**. That is structural rather than lucky. `m_interval_pos`
+starts at `-1`, so the first `AudioProc` chunk after `m_audio_enable` opens
+interval 1 immediately; a client cannot cross an extra boundary while starting
+up because its boundaries are a pure function of the samples it has been
+handed (`njclient.cpp:788-817`).
+
+Second, and decisively: **dialling the drift in from zero removes the effect
+entirely.** `ramp3000` is the `drift3000` ladder with each client's offset
+ramped linearly from 0 to its full 3000 ppm over the whole run
+(`--ppm-ramp`). Not one of its six pairs reads a single interval low, even
+though the offset reaches the same 3000 ppm the un-ramped run starts at. A
+start-up transient would have to occur while the offset is still zero, and
+here the offset gets all the way to 3000 ppm with no effect at all.
+
+**It is not an artefact of pacing samples at (1 + ppm*1e-6).** A fixed start
+offset with **zero clock error anywhere** reproduces it, with the same sign
+rule and the same whole-interval quantisation:
+
+| scenario | injected | pair | measured |
+|----------|----------|------|----------|
+| startoff1s | client 2's audio held back 1 s, no ppm anywhere | 2<-0, 2<-1 | 4000.1, 4000.1 |
+| startoff1s | " | 0<-1, 0<-2, 1<-0, 1<-2 | 8000.1, 8000.1, 8000.1, 8000.1 |
+| startoff2s | held back 2 s | 2<-0, 2<-1 | 4000.1, 4000.1 |
+| startoff4s | held back 4 s | 2<-0, 2<-1 | 4000.1, 4000.2 |
+
+  Only the **sign** of the offset decides, never its size: 1 s, 2 s and 4 s
+  answer identically, because a phase shift is taken modulo the interval. The
+  rule is that the pair reads one interval low exactly when the emitter's
+  interval grid *leads* the listener's.
+
+**It is the grid.** Each client's interval boundaries sit at multiples of the
+interval counted from its own session position 0, and there is no shared time
+origin anywhere in the protocol to line them up against (§8b). So a boundary
+at session position `S` falls at wall time `origin_i + S/rate_i`, and the
+margin between the emitter's interval closing and the listener's next boundary
+is
+
+    lead = (origin_E - origin_L) + S * (1/rate_E - 1/rate_L)
+
+`S` is the first marker's interval *close*, `mark_period + interval`. A
+negative `lead` means the download is already queued when the listener's
+boundary arrives, so it plays one interval after emission; a positive `lead`
+means it misses and waits a second. That is the entire effect, and the
+analyzer now derives `lead` from the injected clock error and the recorded
+session origins alone and prints it beside the measured offset (§7c of
+`results/tables.md`), so the prediction and the measurement are independent.
+
+The onset is where `lead` grows past the pipeline's own close-to-decode
+latency, which the ppm ladder brackets from both sides:
+
+| lead | pairs at this lead that read one interval low | pairs at this lead that read two |
+|------|------------------------------------------|--------------------------------|
+| -8 ms | none | ppm500 0<-1, 2<-0, 2<-1 |
+| -16 ms | none | ppm500 2<-1, ppm1000 0<-1, 2<-0 |
+| -24 ms | ppm1500 2<-0 | ppm1500 0<-1 |
+| -32 ms | ppm1000 2<-1, ppm2000 2<-0 | ppm2000 0<-1 |
+| -40 ms | ppm2500 0<-1 | ppm2500 2<-0 |
+| -48 ms and beyond | ppm1500 2<-1, ppm2000 2<-1, ppm2500 2<-1 | none |
+
+  So the flip needs a lead of roughly **25-40 ms**, which is the pipeline's own
+  latency and not a property of start-up. The bracket is a range rather than a
+  point because rows at the *same* lead disagree - ppm1500 `2<-0` flips at
+  -24 ms where ppm1500 `0<-1` does not, and ppm2000 `2<-0` flips at -32 ms
+  where ppm2000 `0<-1` does not. A listener running slow and an emitter
+  running fast produce the same lead but not quite the same margin, and this
+  study does not resolve which side of that asymmetry sets the exact value.
+  The claim being made is only that the onset is a lead of tens of
+  milliseconds, and that it is a lead at all.
+
+  The disagreement is not confined to being untidy, though: `2<-0` reads *two*
+  intervals at -40 ms having read *one* at -32 ms, so `lead` is
+  non-monotonic for that pair. That is the reason the section above claims no
+  more than it does, and it is tracked in
+  [#32](https://github.com/drawmeanelephant/ninjam/issues/32) - whether the
+  margin really depends on which clock is wrong, or whether these rows are one
+  unlucky run each. Treat §7c's `lead` column as a first-order predictor, not
+  as a law at the margin.
+
+**And it is the same mechanism as §2.1, not a second one.** The state is latched
+at the first marker and then holds, because the phase is fixed and only the
+accumulated drift moves it - until that drift reaches the next whole interval,
+at which point the pair crosses back. That is not an inference: the existing
+runs show it crossing at exactly the time a whole interval of accumulated error
+predicts.
+
+| scenario | pair | ppm rel | last one-interval-low | first back on baseline | 2 iv predicts |
+|----------|------|---------|----------------------|-------------------------|----------------|
+| drift8000 | 2<-1 | +16000 | t=500.1 | t=520.4 | t=500 s |
+| drift12000 | 2<-1 | +24000 | t=332.0 | t=340.2 | t=333 s |
+
+  and `drift3000 2<-0` never crosses at all, because +3000 ppm over 660 s
+  accumulates 1.98 intervals and stops 0.02 short of the two it needs. There
+  is no separate rule for these pairs; they are the one-interval rule of §2.1,
+  read from a phase that happened to start on the far side of the threshold.
+
+**What this costs, practically.** Nothing, at realistic clock errors. The
+effect needs a *relative* clock error past roughly 2000 ppm - 0.2% - to appear
+at a 4 s interval, and the first marker's lead is what has to clear the
+pipeline latency, so it shrinks as the session gets shorter and grows with the
+interval. A consumer interface at 20 ppm is three orders of magnitude below
+the onset. The reason it is worth writing down is not that it will bite anyone
+but that it is a *join-time quantisation*: a badly-clocked client can be a
+whole interval out from the first note, with nothing to ramp into, and the
+interval model has no way to represent the fraction it is actually off by.
 
 ## 3. Message loss costs markers, not alignment
 
@@ -792,7 +912,7 @@ Each of these has a tracking issue.
   therefore a *pessimistic* bound on what survives a link that merely shortens
   writes, and an optimistic one for anything that drops bytes mid-message.
   [#23](https://github.com/drawmeanelephant/ninjam/issues/23)
-- **Some pairs start a whole interval off before any drift accumulates.** This
+- ~~**Some pairs start a whole interval off before any drift accumulates.** This
   turned up while validating §2.1 and is not drift at all. In every run with
   offsets of 3000 ppm or more, several client pairs measure 4020 ms instead of
   8020 ms on their *very first* marker - a full interval of misalignment
@@ -800,16 +920,22 @@ Each of these has a tracking issue.
   at 3000 ppm and above and not at 200 ppm or below, and which pairs get it
   is not a simple function of the sign of the offset. §2.2 extends this to the
   other two tempos, where it is present in every run: 3 of 6 pairs at 8 s and
-  1-2 of 6 at 2 s, with `2<-1` offset every time, so it is a property of the
-  session start-up rather than of the interval or of the injected error. The
-  most likely cause is
-  the startup transient: a client whose sample counter runs fast crosses an
-  extra interval boundary while the session is still coming up, and the
-  interval model has no way to express a fractional position, so the error
-  lands on the interval grid. This is a *join-time* quantisation and it is not
-  in the §2.1 threshold numbers, which use only the pairs that start aligned.  It is worth its own experiment: it means
-  a badly-clocked client can be a whole interval out before it has played a
-  note, which is a sharper failure than slow drift.
+  1-2 of 6 at 2 s, with `2<-1` offset every time, so it looked like a property
+  of the session start-up rather than of the interval or of the injected
+  error.~~ **Resolved, and the start-up hypothesis was wrong.** It is the
+  interval grid, exactly as §2.1 says it should be: the emitter's interval
+  closing before the listener's next boundary puts the download one interval
+  early, and the only reason it looked like start-up is that the state is
+  latched at the first marker. Two experiments settle it. No client starts
+  early or late and no interval is consumed getting there - the first interval
+  boundary lands at 0.001 of an interval, structurally, because
+  `m_interval_pos` starts at -1. And ramping each client's offset in from 0
+  over the run **removes the effect entirely**, which a start-up transient
+  cannot survive, since it would have to happen while the offset is still
+  zero. A fixed start offset with zero clock error anywhere reproduces it with
+  the same sign rule and with the magnitude irrelevant, which rules out the
+  harness pacing. Onset is a lead of 25-40 ms between the two grids, i.e. the
+  pipeline's own latency. Full working in §2.3.
   [#25](https://github.com/drawmeanelephant/ninjam/issues/25)
 - ~~**A corrupted byte stream is reported as a bare disconnect, so a framing
   failure is indistinguishable from a dead network.** Found while reviewing the

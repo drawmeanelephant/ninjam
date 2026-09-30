@@ -1,0 +1,8 @@
+tag=startoff1s duration=120.0s markers=54 clock_rows=3534 trunc_rows=0
+  client 0 ppm=+0 status_ok=0.02s first_audio=20.12s first_marker=20.06s emitted=9 decoded=18 dropped=0/58 trunc=0/0B desync=0
+    start: audio=+0.000s first_iv=+0.000s iv_spos=2.0ms (ppm_eff=+0)
+  client 1 ppm=+0 status_ok=0.02s first_audio=20.12s first_marker=20.06s emitted=9 decoded=18 dropped=0/58 trunc=0/0B desync=0
+    start: audio=+0.000s first_iv=+0.000s iv_spos=2.0ms (ppm_eff=+0)
+  client 2 ppm=+0 status_ok=0.02s first_audio=17.08s first_marker=17.04s emitted=9 decoded=18 dropped=0/58 trunc=0/0B desync=0
+    start: audio=+0.982s first_iv=+0.982s iv_spos=2.0ms (ppm_eff=+0)
+  logs: /Users/tbuddy/dev/z/ninjam-001/results/startoff1s/startoff1s_markers.csv, /Users/tbuddy/dev/z/ninjam-001/results/startoff1s/startoff1s_clock.csv, /Users/tbuddy/dev/z/ninjam-001/results/startoff1s/startoff1s_summary.txt, /Users/tbuddy/dev/z/ninjam-001/results/startoff1s/startoff1s_clients.csv, /Users/tbuddy/dev/z/ninjam-001/results/startoff1s/startoff1s_trunc.csv, /Users/tbuddy/dev/z/ninjam-001/results/startoff1s/startoff1s_start.csv

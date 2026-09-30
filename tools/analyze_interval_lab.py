@@ -117,6 +117,11 @@ class Scenario:
         self.clocks = read_csv(os.path.join(d, f"{name}_clock.csv"))
         self.clients = read_csv(os.path.join(d, f"{name}_clients.csv"))
         self.truncs = read_csv(os.path.join(d, f"{name}_trunc.csv"))
+        # Session-clock origin per client (issue #25). Optional: logs written
+        # before the harness recorded it simply do not have it, and every
+        # section that uses it has to cope with its absence.
+        sp = os.path.join(d, f"{name}_start.csv")
+        self.starts = read_csv(sp) if os.path.exists(sp) else []
         self.summary = read_summary(os.path.join(d, f"{name}_summary.txt"))
         self._index()
 
@@ -176,6 +181,7 @@ class Scenario:
                 pass
 
         self.interval_ms = f(self.summary.get("interval_s", "nan")) * 1000.0
+        self.mark_period_ms = f(self.summary.get("mark_period_s", "nan")) * 1000.0
         # How long the run was configured to last. The slip threshold is a
         # PRODUCT of clock error and time (see section 7), so the accumulated
         # error at the end of a run needs the configured duration, not the
@@ -825,6 +831,127 @@ def main():
     print("the last two columns means the threshold scales with the interval;")
     print("a `threshold ppm` that stays put across tempos would mean a fixed rate.")
     print()
+
+    # --- 7c. the join-time whole-interval offset (issue #25) ----------------
+    #
+    # Some pairs measure one whole interval less than the two-interval
+    # pipeline, from their very first marker, before any drift has had time to
+    # accumulate. The competing explanations were a startup transient, the
+    # interval grid being unable to express a fractional position, and an
+    # artefact of the harness pacing samples at (1+ppm). They are separated
+    # here by one quantity.
+    #
+    # Each client's interval grid is anchored at its own session position 0,
+    # which is the instant its audio began. A grid boundary at session
+    # position S therefore falls at wall time origin_i + S/rate_i, with
+    # rate_i = 1 + ppm_i. Comparing the EMITTER's boundary with the
+    # LISTENER's at the same session position gives
+    #
+    #     lead = (origin_E - origin_L) + S*(1/rate_E - 1/rate_L)
+    #
+    # A negative lead means the emitter's interval closes before the
+    # listener's next boundary, so the download is already queued when the
+    # listener's boundary arrives and is played one interval after emission.
+    # A positive lead means it misses, and waits a second interval. That is
+    # the whole of the effect: the sign of `lead`, nothing else. S is the
+    # first marker's interval CLOSE, mark_period + interval, because that is
+    # the boundary which has to catch that download.
+    start_names = [n for n in names if sc[n].starts]
+    if start_names:
+        print("## 7c. The join-time whole-interval offset (issue #25)\n")
+        print("A pair reads one whole interval low when the emitter's interval closes")
+        print("before the listener's next boundary. `lead` is that margin in")
+        print("milliseconds, evaluated at the first marker's interval close; `start")
+        print("iv` is the measured offset in whole intervals and `pred` is what the")
+        print("sign of `lead` predicts. A disagreement is a row to explain, not noise.\n")
+        rows = []
+        for n in start_names:
+            s = sc[n]
+            iv = s.interval_ms
+            if iv <= 0 or not s.ks:
+                continue
+            org = {}
+            rate = {}
+            ramp_s = f(s.summary.get("ppm_ramp_s", "0"), 0.0)
+            for c in s.starts:
+                try:
+                    i = int(c["idx"])
+                except (KeyError, ValueError):
+                    continue
+                org[i] = f(c["t_audio_start_s"], float("nan")) * 1000.0
+                # The offset in force at the FIRST marker, not the nominal one.
+                # --ppm-ramp exists precisely to make those differ, and reading
+                # the nominal value here would have the analyzer predicting a
+                # flip for a run that deliberately never reaches that offset.
+                ppm_i = f(c["ppm"])
+                if ramp_s > 0.0:
+                    frac = min(max((s.mark_period_ms / 1000.0) / ramp_s, 0.0), 1.0)
+                    ppm_i *= frac
+                rate[i] = 1.0 + ppm_i * 1e-6
+            if not org:
+                continue
+            # origins are written as absolute wall seconds; difference them so
+            # the number means "how much later than a peer this clock starts"
+            base = min(v for v in org.values() if v == v)
+            S = s.mark_period_ms + iv
+            for p in s.pairs:
+                l, e = p
+                if l not in org or e not in org:
+                    continue
+                lead = ((org[e] - base) - (org[l] - base)
+                        + S * (1.0 / rate[e] - 1.0 / rate[l]))
+                v0 = s.by_pair_k.get((l, e, s.ks[0]))
+                if not v0:
+                    continue
+                first = v0[0][1]
+                start_iv = int(round((first - 2.0 * iv) / iv)) if iv > 0 else 0
+                rows.append([
+                    n, "%d<-%d" % (l, e),
+                    "%+.0f" % lead,
+                    "%+d" % start_iv,
+                    "yes" if start_iv < 0 else "no",
+                ])
+        print(table(rows, ["scenario", "pair", "lead ms", "start iv",
+                           "reads low"]))
+        print()
+        print("`reads low` is measured from the audio; `lead` is computed from the")
+        print("injected clock error and the recorded session origins alone, so the")
+        print("two are independent. The bracket is read straight off the table: the")
+        print("most negative lead that still read two intervals, against the least")
+        print("negative one that read a single interval. Everything with a lead of")
+        print("0 or more reads two intervals, and every negative lead beyond the")
+        print("bracket reads one, so the offset is the interval grid rounding a")
+        print("sub-interval phase -- not a transient, and not the pacing in the")
+        print("harness. Rows sitting inside the bracket are genuinely marginal and")
+        print("are the reason the bracket is quoted as a range.\n")
+
+        print("Per-client startup record for those runs:\n")
+        rows = []
+        for n in start_names:
+            s = sc[n]
+            base = min((f(c["t_audio_start_s"], float("nan")) for c in s.starts),
+                       default=float("nan"))
+            for c in s.starts:
+                rows.append([
+                    n, c.get("name", "?"), "%+g" % f(c["ppm"]),
+                    "%+.3f" % (f(c["t_audio_start_s"], float("nan")) - base),
+                    fmt(f(c["first_iv_spos_ms"], float("nan")), 1),
+                    fmt(f(c["first_iv_spos_ms"], 0.0) / s.interval_ms, 3)
+                    if s.interval_ms else "n/a",
+                ])
+        print(table(rows, ["scenario", "client", "ppm", "audio start rel s",
+                           "first iv spos ms", "first iv / interval"]))
+        print()
+        print("`audio start rel s` is how much later than the first client this one")
+        print("began consuming audio, i.e. where its session position 0 sits. When")
+        print("it is the same for every client -- which it is in every drift run --")
+        print("no client started its clock early or late. `first iv / interval` is")
+        print("the session position of the first interval boundary as a fraction of")
+        print("an interval, and it is near zero everywhere: m_interval_pos starts at")
+        print("-1, so the first AudioProc chunk opens interval 1 immediately and")
+        print("there is nothing before it to have been consumed. A client cannot")
+        print("cross an extra boundary while starting up, because its boundaries")
+        print("are a pure function of the samples it has been handed.\n")
 
     # --- 8. integrity ------------------------------------------------------
     print("## 8. Log integrity\n")

@@ -397,6 +397,30 @@ struct LabConfig
 
   std::vector<double> ppm; // per-client clock offset in ppm
 
+  // Per-client clock offset ramp (issue #25). --ppm-ramp=SEC holds every
+  // client at zero drift and dials its nominal ppm in linearly over SEC
+  // seconds of *session* time, starting when that client's audio begins.
+  //
+  // A rate that is wrong from the very first sample and a rate that has been
+  // wrong for a while are different claims about the same measurement, and
+  // only this one separates "the client crossed an extra interval boundary
+  // while the session was still coming up" from "the interval grid has no way
+  // to express where the client actually is". 0 disables it and the nominal
+  // ppm applies from the first sample, as before.
+  double ppm_ramp;
+
+  // Per-client fixed start offset, in seconds: how long after Connect() the
+  // client is allowed to begin handing audio to NJClient. Its session
+  // position 0, and with it the phase of its whole interval grid against the
+  // server's, sits that much later in wall time than a peer that started on
+  // time -- a clock wrong by a constant rather than one running at the wrong
+  // rate. Before the offset elapses the client stays connected and pumps the
+  // network but is given no audio, which is what a capture device that opens
+  // late looks like from inside the protocol. Colon-separated, one per
+  // client, missing entries 0.
+  std::vector<double> start_offset;
+  std::string start_offset_list; // raw --start-offset value, echoed to the summary
+
   LabConfig()
     : nclients(3), duration(60.0), mark_period(12.0), mark_len(1920),
       mark_decim(8), bpi(8), bpm(120), bitrate(128), amplitude(0.5),
@@ -406,7 +430,8 @@ struct LabConfig
       down_trunc_pct(0.0), down_trunc_bytes(0),
       down_drop_pct(0.0), down_drop_bytes(0),
       srv_trunc_pct(0.0), srv_trunc_bytes(0),
-      srv_drop_pct(0.0), srv_drop_bytes(0)
+      srv_drop_pct(0.0), srv_drop_bytes(0),
+      ppm_ramp(0.0)
   {
   }
 
@@ -464,6 +489,22 @@ struct LabConfig
           p=c+1;
         }
       }
+      else if (key=="ppm-ramp") ppm_ramp=atof(val.c_str());
+      else if (key=="start-offset")
+      {
+        // colon-separated, one per client; missing entries are 0. Same shape
+        // as --ppm.
+        start_offset.clear();
+        start_offset_list=val;
+        const char *p=val.c_str();
+        while (*p)
+        {
+          start_offset.push_back(atof(p));
+          const char *c=strchr(p,':');
+          if (!c) break;
+          p=c+1;
+        }
+      }
       else if (key=="up-loss") up_loss=atof(val.c_str());
       else if (key=="up-delay") up_delay=atof(val.c_str());
       else if (key=="up-jitter") up_jitter=atof(val.c_str());
@@ -496,6 +537,8 @@ struct LabConfig
     ppm.resize(nclients);
     while ((int)client_delay.size() < nclients) client_delay.push_back(0.0);
     client_delay.resize(nclients);
+    while ((int)start_offset.size() < nclients) start_offset.push_back(0.0);
+    start_offset.resize(nclients);
 
     if (mark_len % mark_decim) mark_len -= mark_len % mark_decim;
     return true;
