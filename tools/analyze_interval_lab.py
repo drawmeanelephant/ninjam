@@ -64,6 +64,12 @@ def f(x, default=0.0):
         return default
 
 
+# LAB_SRATE in ninjam/tests/interval_probe.h. Logs written before the harness
+# recorded srate still need it to undo the detector's centring bias, and it is
+# a compile-time constant of the lab rather than a tunable.
+LAB_SRATE = 48000.0
+
+
 def median(xs):
     if not xs:
         return float("nan")
@@ -169,6 +175,35 @@ class Scenario:
                 pass
 
         self.interval_ms = f(self.summary.get("interval_s", "nan")) * 1000.0
+
+        # The detector reports the CENTRE of the correlation window while the
+        # marker is emitted at the START of its burst, so err_ms as originally
+        # logged carries a fixed (mark_len-1)/2 samples of measurement bias. At
+        # the default mark_len=1920 that is 19.99 ms, which was the whole of the
+        # "~20 ms residual" the delay tables used to show. It is a property of
+        # the detector, not of NINJAM, and it moves exactly in step with
+        # --mark-len (see the mark960/mark3840 scenarios).
+        #
+        # The harness now writes err_ms centre-to-centre and says so with
+        # `err_centred 1`; subtracting the bias from those would double-count
+        # it. Logs predating that fix have the bias baked in and no such key,
+        # so it is removed for them. mark_len is in every summary file, so the
+        # correction is exact either way.
+        self.srate = f(self.summary.get("srate", "nan"))
+        self.mark_len = f(self.summary.get("mark_len", "nan"))
+        self.err_centred = self.summary.get("err_centred") == "1"
+        bias_raw = self.summary.get("centre_bias_ms")
+        if bias_raw is not None:
+            self.centre_bias_ms = f(bias_raw)
+        elif self.mark_len == self.mark_len:
+            # logs written before the harness recorded srate; it is a
+            # compile-time constant of the lab, not a per-run setting
+            sr = self.srate if self.srate == self.srate and self.srate > 0 else LAB_SRATE
+            self.centre_bias_ms = (self.mark_len - 1.0) * 0.5 * 1000.0 / sr
+        else:
+            self.centre_bias_ms = 0.0
+        if self.err_centred:
+            self.centre_bias_ms = 0.0
 
         # Residual of each pair's error from its own median delay, wrapped into
         # +/- half an interval. This is the quantity the interval model is
@@ -318,18 +353,27 @@ def main():
     for n in names:
         s = sc[n]
         iv = f(s.summary.get("interval_s", "nan")) * 1000.0  # ms
+        bias = s.centre_bias_ms
         if not s.delay:
-            rows.append([n, fmt(iv / 1000.0, 2), "no data", "", "", ""])
+            rows.append([n, fmt(iv / 1000.0, 2), fmt(bias, 2), "no data", "", "", ""])
             continue
-        ds = [d for d in s.delay.values()]
+        ds = [d - bias for d in s.delay.values()]
         ivs = [d / iv for d in ds] if iv == iv and iv > 0 else [float("nan")]
         rows.append([
-            n, fmt(iv, 2),
+            n, fmt(iv, 2), fmt(bias, 2),
             fmt(min(ds)), fmt(median(ds)), fmt(max(ds)),
-            fmt(median([v for v in ivs if v == v]), 3),
+            fmt(median([v for v in ivs if v == v]), 4),
         ])
-    print(table(rows, ["scenario", "interval s", "min delay", "median delay",
-                       "max delay", "median delay / interval"]))
+    print(table(rows, ["scenario", "interval s", "centre bias ms", "min delay",
+                       "median delay", "max delay", "median delay / interval"]))
+    print()
+    print("`centre bias ms` is the detector's half-burst centring offset,")
+    print("(mark_len-1)/2 samples, already removed from the delays above. It is")
+    print("an artefact of measuring a correlation CENTRE against a marker")
+    print("emitted at its START, not latency in NINJAM -- see the mark_len")
+    print("scenarios, where the raw residual tracks this column exactly. It")
+    print("reads 0.00 for scenarios whose logs were written after the harness")
+    print("started emitting centre-to-centre errors; those need no correction.")
     print()
     print("`median delay / interval` is how many intervals elapse between a marker")
     print("being emitted and being heard. See REPORT.md for what that number means")

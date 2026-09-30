@@ -13,8 +13,11 @@ harness, the 15 scenarios, the analyzer and the raw logs are all in the repo.
 
 The headline results, so you do not have to re-derive them:
 
-- Emission to playback is **two intervals**, not a fixed time: 4020.01 ms at a
-  2 s interval, 8020.04 ms at 4 s, 16020.04 ms at 8 s.
+- Emission to playback is **two intervals**, not a fixed time: 4000.02 ms at a
+  2 s interval, 8000.05 ms at 4 s, 16000.05 ms at 8 s — 2.0000 intervals in
+  all three. There is no latency residual; the ~20 ms this study used to
+  report was the detector comparing a correlation centre against a marker
+  emitted at its start, i.e. half the marker burst (see #21 below).
 - A client does not slide off the grid under clock drift. Its error stays
   pinned to a whole number of intervals and then jumps. The threshold is a
   **product**: a pair slips when accumulated relative clock error reaches one
@@ -117,16 +120,26 @@ last marker was heard by only one pair.
 
 ## The three issues
 
-### #21 — attribute the constant ~20 ms residual
+### #21 — attribute the constant ~20 ms residual — **RESOLVED, and it was the harness**
 
-The emission-to-playback delay is 2 intervals plus a constant **20.01–20.04 ms**
-that does not move when the interval length changes by 4x. It is currently
-attributed to codec and loopback latency, which is a guess.
+The emission-to-playback delay is 2 intervals plus a constant ~20 ms. It is
+**not** codec or loopback latency. The detector reports the **centre** of the
+correlation window while a marker is emitted at the **start** of its burst, so
+every measurement carried `(mark_len-1)/2` samples of pure instrument bias —
+19.99 ms at the default `mark_len=1920`, which is the whole residual.
 
-Cheap discriminator: move `--mark-len` or the lab chunk size and see whether the
-residual follows. If it is harness-side, the true interval delay is exactly two
-intervals and the constant is an artefact of the measuring apparatus. Either
-answer is worth having; the current ambiguity is the problem.
+The discriminator is `--mark-len`, because a centring artefact scales with the
+burst and codec latency does not. Measured residuals: `mark960` 10.06 ms,
+`baseline` 20.05 ms, `mark3840` 40.06 ms. Slope against half-burst is 1.0000
+times the sample period. After correction every scenario reads exactly
+**2.0000** intervals.
+
+**Generalisable lesson, worth applying to #22 and #23:** when a constant
+appears in a measurement, test whether it is a function of the instrument
+before attributing it to the system. Varying one instrument parameter
+(`--mark-len`, chunk size, marker period) is cheap and would have caught this
+in minutes. The harness now writes `err_ms` centre-to-centre and records
+`err_centred 1`; the analyzer removes the bias from older logs.
 
 ### #22 — measure under real round-trip latency
 

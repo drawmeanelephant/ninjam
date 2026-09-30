@@ -1,0 +1,5 @@
+tag=mark3840iv2s duration=200.0s markers=96 clock_rows=5865
+  client 0 ppm=+0 status_ok=0.02s first_audio=16.06s first_marker=16.10s emitted=16 decoded=32 dropped=0/594
+  client 1 ppm=+0 status_ok=0.02s first_audio=16.06s first_marker=16.10s emitted=16 decoded=32 dropped=0/594
+  client 2 ppm=+0 status_ok=0.02s first_audio=16.06s first_marker=16.10s emitted=16 decoded=32 dropped=0/594
+  logs: /Users/tbuddy/dev/z/ninjam-001/results/mark3840iv2s/mark3840iv2s_markers.csv, /Users/tbuddy/dev/z/ninjam-001/results/mark3840iv2s/mark3840iv2s_clock.csv, /Users/tbuddy/dev/z/ninjam-001/results/mark3840iv2s/mark3840iv2s_summary.txt, /Users/tbuddy/dev/z/ninjam-001/results/mark3840iv2s/mark3840iv2s_clients.csv

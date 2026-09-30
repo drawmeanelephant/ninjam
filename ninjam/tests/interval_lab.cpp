@@ -642,7 +642,19 @@ int main(int argc, char **argv)
           long k=(long)floor(heard_ms/(cfg.mark_period*1000.0));
           if (k < 0) k=0;
 
-          const double target_ms=(double)k*cfg.mark_period*1000.0;
+          // The detector reports the CENTRE of the correlation window, but
+          // the marker is EMITTED at the start of its burst. Comparing a
+          // centre against a start injects (mark_len-1)/2 samples of pure
+          // measurement bias -- 19.99 ms at the default 1920, which is the
+          // entire "~20 ms residual" this harness used to report. Measured
+          // against k*mark_period it looks like codec or loopback latency
+          // and it is not: it moves exactly in step with --mark-len.
+          //
+          // So compare centre to centre. k is still recovered from the
+          // unshifted heard_ms, because the burst start -- not its centre --
+          // is what lands on the k*mark_period grid.
+          const double centre_off_ms=(double)(cfg.mark_len-1)*0.5*1000.0/(double)LAB_SRATE;
+          const double target_ms=(double)k*cfg.mark_period*1000.0+centre_off_ms;
           const double frac=heard_ms-target_ms;
 
           // k was recovered as floor(heard/period), which is only the right
@@ -768,6 +780,16 @@ int main(int argc, char **argv)
     fprintf(fp,"interval_s %.4f\n",interval_s);
     fprintf(fp,"mark_period_s %.4f\n",cfg.mark_period);
     fprintf(fp,"mark_len %d\n",cfg.mark_len);
+    // srate and mark_len together are what the analyzer needs to remove the
+    // detector's half-burst centring bias from err_ms, so record both rather
+    // than making the correction depend on a constant in the reader.
+    fprintf(fp,"srate %d\n",LAB_SRATE);
+    fprintf(fp,"centre_bias_ms %.6f\n",
+            (double)(cfg.mark_len-1)*0.5*1000.0/(double)LAB_SRATE);
+    // err_ms in these logs is ALREADY centre-to-centre (see the target_ms
+    // computation), so a reader must not subtract centre_bias_ms again.
+    // Older logs lack this key and DO need the bias removed.
+    fprintf(fp,"err_centred 1\n");
     fprintf(fp,"decim %d\n",cfg.mark_decim);
     fprintf(fp,"threshold %.3f\n",cfg.threshold);
     fprintf(fp,"amplitude %.3f\n",cfg.amplitude);
