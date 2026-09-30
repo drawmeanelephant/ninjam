@@ -1,3 +1,0 @@
-WAV /tmp/zclient-demo/s3/bob_played.wav frames=691200 srate=48000 ch=1 rms=0.355542 peak=0.522949 pass=true
-capture_rms=0 (mic permission) recorded in evidence
-WAV s3-playback-mix.wav frames=921600 srate=48000 ch=1 rms=0.142352 peak=0.214661 pass=true

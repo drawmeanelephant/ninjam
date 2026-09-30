@@ -1,1 +1,0 @@
-WAV /tmp/zclient-demo/s3/bob_played.wav frames=691200 srate=48000 ch=1 rms=0.355541 peak=0.522949 pass=true
