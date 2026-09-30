@@ -91,7 +91,7 @@ class Net_Message
 class Net_Connection
 {
   public:
-    Net_Connection() : m_error(0),m_msgsendpos(-1), m_recvstate(0),m_recvmsg(0),m_delayseq(0),m_lastdue(0),m_con(0)
+    Net_Connection() : m_error(0),m_msgsendpos(-1), m_recvstate(0),m_recvmsg(0),m_delayseq(0),m_lastdue(0),m_lastrxdue(0),m_rxdelayseq(0),m_con(0)
     {
       SetKeepAlive(0);
     }
@@ -157,6 +157,19 @@ class Net_Connection
     unsigned long m_delayseq;
     void pumpDelayed();
     void enqueueDelayed(double due_ms, Net_Message *msg);
+
+    // Receive-side hold, the mirror of m_delayq: when the thread running
+    // this connection has configured an inbound delay (NJCond::rx_delay_ms),
+    // completed audio messages taken off the wire are parked here, in
+    // completion order, until their due time elapses. Kept sorted by (due,
+    // arrival seq); due times are forced non-decreasing so release order is
+    // wire order and the stream can never be reordered. Filled by Run(),
+    // drained by Run() before anything new is parsed.
+    std::vector<DelayedMsg> m_rxdelayq;
+    double m_lastrxdue;
+    unsigned long m_rxdelayseq;
+    Net_Message *peekRxDue();
+    void enqueueRxDelayed(double due_ms, Net_Message *msg);
 
     JNL_IConnection *m_con;
     WDL_Queue m_sendq;

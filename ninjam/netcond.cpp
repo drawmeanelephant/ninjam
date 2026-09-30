@@ -24,9 +24,16 @@ namespace NJCond
 {
   static Profile &profile()
   {
-    static NJCOND_THREAD_LOCAL Profile p = {0.0, 0.0, 0.0};
+    static NJCOND_THREAD_LOCAL Profile p = {0.0, 0.0, 0.0, 0.0};
     return p;
   }
+
+  // Receive-side hold for audio messages, in ms. Like profile(), this is
+  // per-thread, but it is read by the thread that RUNS the receiving
+  // connection, not the sending one: one process receives for every other
+  // participant on shared threads, so "hold what I receive" must be a
+  // property of the receiver. See rx_delay_ms() in netcond.h.
+  static NJCOND_THREAD_LOCAL double t_rx_delay_ms = 0.0;
 
   static Stats &stats()
   {
@@ -90,8 +97,19 @@ namespace NJCond
     if ((s=getenv("NJCOND_AUDIO_LOSS_PCT"))) p.audio_loss_pct=atof(s);
     if ((s=getenv("NJCOND_AUDIO_DELAY_MS"))) p.audio_delay_ms=atof(s);
     if ((s=getenv("NJCOND_AUDIO_JITTER_MS"))) p.audio_jitter_ms=atof(s);
+    if ((s=getenv("NJCOND_AUDIO_RX_DELAY_MS"))) t_rx_delay_ms=atof(s);
 
     if (p.active()) profile() = p;
+  }
+
+  double rx_delay_ms()
+  {
+    return t_rx_delay_ms;
+  }
+
+  void set_rx_delay(double ms)
+  {
+    t_rx_delay_ms = ms;
   }
 
   // --- internals used by Net_Connection ---------------------------------

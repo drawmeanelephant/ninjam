@@ -97,6 +97,16 @@ fi
 # Varying mark_len separates them: under (a) the residual scales with it,
 # under (b) it does not. mark960 and mark3840 bracket the default, and
 # mark3840iv2s combines the long burst with a short interval.
+#
+# Real round-trip latency (issue #22). --client-delay adds a SYMMETRIC
+# one-way latency per client (client->server AND server->client), which is
+# what a real deployment's RTT looks like to the interval model. The rtt-spread
+# scenario puts three clients at 0 / +50 / +200 ms; rtt100 gives every client
+# the same +100 ms, to separate "does added latency move anything" from "does
+# a latency SPREAD between clients move anything". Prediction under test: the
+# interval clock is driven by each client's own sample counter, not by message
+# arrival, so added latency displaces delivery time without moving playout
+# time -- delays rise by exactly the injected amount, alignment stays put.
 scenarios() {
   cat <<EOF
 baseline|$DRIFT_SECS||3
@@ -117,6 +127,8 @@ interval8s|$LOSS_SECS||3|--bpi=16 --mark-period=20
 mark960|$RESID_SECS||3|--mark-len=960
 mark3840|$RESID_SECS||3|--mark-len=3840
 mark3840iv2s|$RESID_SECS||3|--mark-len=3840 --bpi=4 --mark-period=12
+rtt-spread|$RESID_SECS||3|--client-delay=0:50:200
+rtt100|$RESID_SECS||3|--client-delay=100:100:100
 EOF
 }
 

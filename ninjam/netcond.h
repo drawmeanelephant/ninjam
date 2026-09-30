@@ -51,10 +51,13 @@ namespace NJCond
     double audio_loss_pct;   // percent of audio messages to drop, 0..100
     double audio_delay_ms;   // constant extra delay applied to audio messages
     double audio_jitter_ms;  // uniform random extra delay in [0, this]
+    double audio_rx_delay_ms; // constant extra delay applied to audio messages
+                             // on RECEIVE (see rx_delay_ms below)
 
     bool active() const
     {
-      return audio_loss_pct > 0.0 || audio_delay_ms > 0.0 || audio_jitter_ms > 0.0;
+      return audio_loss_pct > 0.0 || audio_delay_ms > 0.0 ||
+             audio_jitter_ms > 0.0 || audio_rx_delay_ms > 0.0;
     }
   };
 
@@ -80,6 +83,22 @@ namespace NJCond
   // read NJCOND_AUDIO_LOSS_PCT / NJCOND_AUDIO_DELAY_MS / NJCOND_AUDIO_JITTER_MS
   // into the calling thread's profile. No-op if they are unset.
   void init_from_env();
+
+  // The delay/jitter profile (audio_delay_ms / audio_jitter_ms) is applied
+  // where messages are SENT, on the sending thread. A receiver-side delay
+  // cannot go through that path: one process receives on behalf of every
+  // other participant, all on shared threads, so "hold what I receive for X
+  // ms" has to be a property of the receiving side. This returns this
+  // thread's configured receive-side delay for audio messages; 0.0 means no
+  // hold. The lab harness calls it from Net_Connection::Run, so the value is
+  // read on whichever thread runs the connection -- for a lab client that is
+  // the client's own pump thread; for the server process it is the single
+  // server thread, which sets it from NJCOND_AUDIO_RX_DELAY_MS.
+  double rx_delay_ms();
+
+  // set this thread's receive-side hold for audio messages, in ms. 0.0 (the
+  // default) disables it.
+  void set_rx_delay(double ms);
 
   // true if the message type carries interval audio
   bool is_audio_message(int type);

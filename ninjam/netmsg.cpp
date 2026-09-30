@@ -98,6 +98,12 @@ Net_Message *Net_Connection::Run(int *wantsleep)
   // they join the normal send queue before it is drained below
   pumpDelayed();
 
+  // receive-side injector: peek at anything whose hold has elapsed. It is
+  // only handed up at the end of the call, after anything newer parsed off
+  // the wire this pass -- an audio message is never a keepalive, so the
+  // keepalive bookkeeping below is unaffected.
+  Net_Message *held=peekRxDue();
+
   {
     int s=0,r=0;
     m_con->run(-1,-1,&s,&r);
@@ -176,7 +182,13 @@ Net_Message *Net_Connection::Run(int *wantsleep)
     m_recvstate=0;
   }
 
-  while (!retv && m_con->recv_bytes_available()>0)
+  // Only take new bytes off the wire when nothing is still being held: TCP
+  // itself provides the FIFO, so the hold must not work on bytes that would
+  // let a later message slip past an earlier one still parked in m_rxdelayq.
+  const bool wire_gate=m_rxdelayq.empty();
+  bool parsed_any=false;
+
+  while (!retv && wire_gate && m_con->recv_bytes_available()>0)
   {
     char buf[8192];
     int bufl=m_con->peek_bytes(buf,sizeof(buf));
@@ -199,9 +211,31 @@ Net_Message *Net_Connection::Run(int *wantsleep)
 
     if (m_recvmsg->parseBytesNeeded()<1)
     {
-      retv=m_recvmsg;
-      m_recvmsg=0;
-      m_recvstate=0;
+      parsed_any=true;
+
+      // Receive-side adverse conditions: when the thread running this
+      // connection has an inbound delay configured, audio messages are parked
+      // (in completion order) instead of being handed up, exactly as the
+      // send-side injector parks outbound ones in Send(). Only audio messages
+      // are held; everything else passes through untouched, so auth and
+      // config traffic is never delayed.
+      const double rxd=NJCond::rx_delay_ms();
+      if (rxd > 0.0 && NJCond::is_audio_message(m_recvmsg->get_type()))
+      {
+        enqueueRxDelayed(rxd, m_recvmsg);
+        m_recvmsg=0;
+        m_recvstate=0;
+        m_last_recv=now; // data did arrive; keep the keepalive timer honest
+        // m_recvmsg is NULL past this point and the hold now gates the wire,
+        // so this receive pass is done; the next Run() re-enters cleanly.
+        break;
+      }
+      else
+      {
+        retv=m_recvmsg;
+        m_recvmsg=0;
+        m_recvstate=0;
+      }
     }
     if (wantsleep) *wantsleep=0;
   }
@@ -220,6 +254,25 @@ Net_Message *Net_Connection::Run(int *wantsleep)
   else if (now > m_last_recv + m_keepalive*3)
   {
     m_error=-3;
+  }
+
+  // Deliver the held message only if nothing newer won this call. Two rules
+  // fall out of the peek-then-decide-late shape:
+  //  - parsed_any true  -> a message parsed off the wire this pass is newer
+  //    than the held one, so it goes first and the held one stays parked for
+  //    the next call. Delivering both would drop the held message; Run()
+  //    returns at most one message.
+  //  - parsed_any false -> the consumer had no other work. This is what keeps
+  //    a one-message-per-call consumer (NJClient::Run) making progress at all:
+  //    a message that is still inside its hold goes out early rather than
+  //    stalling the protocol machine behind an empty wire.
+  // Either way the hold never reorders anything: m_rxdelayq is strictly FIFO
+  // (enqueueRxDelayed clamps due times non-decreasing), and the wire itself is
+  // gated while anything is parked.
+  if (!retv && held && !parsed_any)
+  {
+    m_rxdelayq.erase(m_rxdelayq.begin());
+    retv=held;
   }
 
   return retv;
@@ -271,6 +324,42 @@ void Net_Connection::enqueueDelayed(double due_ms, Net_Message *msg)
     if (m_delayq[x].due > d.due) { at=x; break; }
   }
   m_delayq.insert(m_delayq.begin()+at, d);
+}
+
+// park a completed inbound audio message for due_ms more milliseconds.
+// The mirror of the send-side hold in Send(): the due time is clamped to be
+// non-decreasing in completion order, so the release order is wire order and
+// the hold can never reorder the stream -- the same property TCP gives the
+// send side.
+void Net_Connection::enqueueRxDelayed(double due_ms, Net_Message *msg)
+{
+  double due=NJCond::now_ms() + due_ms;
+  if (due < m_lastrxdue) due=m_lastrxdue;
+  m_lastrxdue=due;
+
+  DelayedMsg d;
+  d.due=due;
+  d.seq=m_rxdelayseq++;
+  d.msg=msg;
+
+  size_t at=m_rxdelayq.size();
+  for (size_t x=0; x < m_rxdelayq.size(); x ++)
+  {
+    if (m_rxdelayq[x].due > d.due) { at=x; break; }
+  }
+  m_rxdelayq.insert(m_rxdelayq.begin()+at, d);
+}
+
+// If the oldest held inbound audio message's due time has elapsed, hand it
+// back WITHOUT removing it from the queue: the caller decides at the end of
+// Run() whether it can actually be delivered this call (nothing newer was
+// parsed) and pops it then. Deciding late keeps the queue the single source
+// of order -- a peeked message that loses to a newer one simply stays parked.
+Net_Message *Net_Connection::peekRxDue()
+{
+  if (m_rxdelayq.empty()) return 0;
+  if (m_rxdelayq[0].due > NJCond::now_ms()) return 0;
+  return m_rxdelayq[0].msg;
 }
 
 int Net_Connection::Send(Net_Message *msg)
@@ -377,10 +466,14 @@ int Net_Connection::GetStatus()
 
 Net_Connection::~Net_Connection()
 {
-  // release anything still sitting in the adverse-conditions delay queue
+  // release anything still sitting in the adverse-conditions delay queues
   for (size_t x=0; x < m_delayq.size(); x ++)
     if (m_delayq[x].msg) m_delayq[x].msg->releaseRef();
   m_delayq.clear();
+
+  for (size_t x=0; x < m_rxdelayq.size(); x ++)
+    if (m_rxdelayq[x].msg) m_rxdelayq[x].msg->releaseRef();
+  m_rxdelayq.clear();
 
   Net_Message **p=(Net_Message **)m_sendq.Get();
   if (p)

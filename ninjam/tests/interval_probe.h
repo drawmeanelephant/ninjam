@@ -348,6 +348,17 @@ struct LabConfig
   // server downlink profile (passed to the server process via NJCOND_*)
   double down_loss, down_delay, down_jitter;
 
+  // Per-client symmetric added latency, in ms of one-way added delay
+  // (client -> server AND server -> client), colon-separated one per client,
+  // missing entries 0. Applied half on the client's TX thread (TX profile
+  // above) and half in the server process on its connection for that client
+  // (NJCOND_AUDIO_RX_DELAY_LIST, read per connection in usercon.cpp).
+  // Real RTT is symmetric to a good approximation, and the uplink TX path
+  // alone cannot express it: one process would otherwise receive for all
+  // clients with the delay of whichever client thread last set its profile.
+  std::vector<double> client_delay;
+  std::string client_delay_list; // raw --client-delay value, echoed to the summary
+
   std::vector<double> ppm; // per-client clock offset in ppm
 
   LabConfig()
@@ -384,6 +395,21 @@ struct LabConfig
       else if (key=="amplitude") amplitude=atof(val.c_str());
       else if (key=="threshold") threshold=atof(val.c_str());
       else if (key=="late-join") late_join_at=atof(val.c_str());
+      else if (key=="client-delay")
+      {
+        // colon-separated, one per client; missing entries are 0. Same shape
+        // as --ppm.
+        client_delay.clear();
+        client_delay_list=val;
+        const char *p=val.c_str();
+        while (*p)
+        {
+          client_delay.push_back(atof(p));
+          const char *c=strchr(p,':');
+          if (!c) break;
+          p=c+1;
+        }
+      }
       else if (key=="ppm")
       {
         // colon-separated, one per client; missing entries are 0
@@ -419,6 +445,8 @@ struct LabConfig
     if (nclients > 8) nclients=8;
     while ((int)ppm.size() < nclients) ppm.push_back(0.0);
     ppm.resize(nclients);
+    while ((int)client_delay.size() < nclients) client_delay.push_back(0.0);
+    client_delay.resize(nclients);
 
     if (mark_len % mark_decim) mark_len -= mark_len % mark_decim;
     return true;

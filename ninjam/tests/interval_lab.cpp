@@ -137,6 +137,24 @@ static bool port_accepts(int port)
   return ok;
 }
 
+// the value at position idx of a colon-separated numeric list, or 0.0 when
+// the list is shorter. Same shape as the --ppm / --client-delay parsing.
+static double nth_of_colon_list(const std::string &list, int idx)
+{
+  int seen=0;
+  const char *p=list.c_str();
+  while (*p)
+  {
+    const double v=atof(p);
+    if (seen==idx) return v;
+    const char *c=strchr(p,':');
+    if (!c) break;
+    p=c+1;
+    seen++;
+  }
+  return 0.0;
+}
+
 // The server runs in its own process, so its downlink conditioner comes
 // from the environment rather than from a thread-local profile.
 static lab_proc_t spawn_server(const LabConfig &cfg, int port, const char *logpath)
@@ -158,13 +176,26 @@ static lab_proc_t spawn_server(const LabConfig &cfg, int port, const char *logpa
   if (pid < 0) return LAB_BAD_PROC;
   if (pid == 0)
   {
-    char lv[32],ld[32],lj[32];
+    char lv[32],ld[32],lj[32],lr[96];
     snprintf(lv,sizeof(lv),"%g",cfg.down_loss);
     snprintf(ld,sizeof(ld),"%g",cfg.down_delay);
     snprintf(lj,sizeof(lj),"%g",cfg.down_jitter);
+    // the server's receive-side hold is PER CLIENT, but the server process
+    // has one thread: it serves every connection in a single loop. So the
+    // per-client list is passed through as "a:b:c" and the server hands each
+    // user connection the hold of the client on the far side of it. Only the
+    // entries that exist are sent -- the list is sized to the client count,
+    // never padded, so a stray index cannot read past it.
+    {
+      const int n=(int)cfg.client_delay.size() < 8 ? (int)cfg.client_delay.size() : 8;
+      lr[0]=0;
+      for (int q=0; q < n; q ++)
+        snprintf(lr+strlen(lr),sizeof(lr)-strlen(lr),"%s%g",q?":":"",cfg.client_delay[q]);
+    }
     setenv("NJCOND_AUDIO_LOSS_PCT",lv,1);
     setenv("NJCOND_AUDIO_DELAY_MS",ld,1);
     setenv("NJCOND_AUDIO_JITTER_MS",lj,1);
+    setenv("NJCOND_AUDIO_RX_DELAY_LIST",lr,1);
     execl(cfg.srvpath.c_str(),cfg.srvpath.c_str(),
           (cfg.outdir+"/server.cfg").c_str(),"-port",portstr,"-logfile",logpath,(char *)NULL);
     _exit(127);
@@ -353,6 +384,8 @@ int main(int argc, char **argv)
       "  --up-loss=PCT          drop this %% of client->server audio messages\n"
       "  --up-delay=MS --up-jitter=MS\n"
       "  --down-loss=PCT --down-delay=MS --down-jitter=MS   (applied in the server)\n"
+      "  --client-delay=a:b:c   added one-way latency per client, ms, symmetric\n"
+      "                         (client->server AND server->client), i.e. real RTT\n"
       "  --late-join=SEC        start one extra client SEC seconds in\n");
     return 2;
   }
@@ -515,11 +548,22 @@ int main(int argc, char **argv)
       if (n < 1) continue;
 
       // ---- uplink conditioner for this client only ----
+      // c.idx can exceed the list for a late joiner (the list is sized to
+      // the initial client count); a client that joined late has no entry,
+      // which means no added latency.
+      const double cdel = c.idx < (int)cfg.client_delay.size()
+        ? cfg.client_delay[c.idx] : 0.0;
       NJCond::Profile prof;
       prof.audio_loss_pct=cfg.up_loss;
-      prof.audio_delay_ms=cfg.up_delay;
+      prof.audio_delay_ms=cfg.up_delay + cdel*0.5;
       prof.audio_jitter_ms=cfg.up_jitter;
+      prof.audio_rx_delay_ms=0.0; // the inbound half lives in set_rx_delay below
       NJCond::set_profile(prof);
+      // the client's inbound half of its symmetric latency is a RECEIVE-side
+      // hold, because one process receives for every other participant on
+      // shared threads: the delay must be a property of the connection being
+      // pumped, not of whichever client thread last wrote its TX profile.
+      NJCond::set_rx_delay(cdel*0.5);
 
       // ---- network ----
       for (int r=0; r < 32; r ++)
@@ -737,6 +781,7 @@ int main(int argc, char **argv)
 
   const double t_total=now_s()-t_run0;
   NJCond::set_profile(NJCond::Profile());
+  NJCond::set_rx_delay(0.0);
 
   // ---- write logs --------------------------------------------------------
   const std::string mp=cfg.outdir+"/"+cfg.tag+"_markers.csv";
@@ -800,6 +845,7 @@ int main(int argc, char **argv)
     fprintf(fp,"down_loss_pct %g\n",cfg.down_loss);
     fprintf(fp,"down_delay_ms %g\n",cfg.down_delay);
     fprintf(fp,"down_jitter_ms %g\n",cfg.down_jitter);
+    fprintf(fp,"client_delay_ms %s\n",cfg.client_delay_list.c_str());
     fprintf(fp,"duration_s %.2f\n",t_total);
     fclose(fp);
   }
@@ -812,15 +858,21 @@ int main(int argc, char **argv)
   {
     fprintf(fp,"idx,name,ppm,is_late,status_ok_s,first_remote_audio_s,first_marker_s,"
                "first_marker_from,markers_emitted,markers_skipped,markers_decoded,"
-               "audio_msgs_seen,audio_msgs_dropped,audio_msgs_delayed\n");
+               "audio_msgs_seen,audio_msgs_dropped,audio_msgs_delayed,final_status\n");
     for (size_t si=0; si < live.size(); si ++)
     {
       SimClient &c=sc[live[si]];
-      fprintf(fp,"%d,%s,%g,%d,%.3f,%.3f,%.3f,%d,%ld,%ld,%ld,%lu,%lu,%lu\n",
+      // final_status is the NJClient status at teardown: 0 means the session
+      // was still healthy at the end of the run. A fault-injection profile
+      // that shows up here as a negative value has killed the session rather
+      // than degraded it, which is a different (and much louder) failure than
+      // anything the marker table can show.
+      fprintf(fp,"%d,%s,%g,%d,%.3f,%.3f,%.3f,%d,%ld,%ld,%ld,%lu,%lu,%lu,%d\n",
         c.idx,c.name.c_str(),c.ppm,(c.idx>=cfg.nclients)?1:0,
         c.t_status_ok_s,c.t_first_remote_audio_s,c.t_first_marker_s,c.first_marker_from,
         c.markers_emitted,c.markers_skipped,c.markers_decoded,
-        c.cond.audio_seen,c.cond.audio_dropped,c.cond.audio_delayed);
+        c.cond.audio_seen,c.cond.audio_dropped,c.cond.audio_delayed,
+        c.client.GetStatus());
     }
     fclose(fp);
   }

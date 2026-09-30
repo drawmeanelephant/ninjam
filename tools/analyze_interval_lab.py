@@ -378,6 +378,12 @@ def main():
     print("`median delay / interval` is how many intervals elapse between a marker")
     print("being emitted and being heard. See REPORT.md for what that number means")
     print("for the interval model.\n")
+    print("The rtt* scenarios add a symmetric per-client network delay")
+    print("(--client-delay, client->server AND server->client). Its contribution is")
+    print("visible in this table and nowhere else: the delay column moves by the")
+    print("injected amount, pair by pair, while the alignment tables below do not.")
+    print("That split is the prediction under test in issue #22 -- added latency")
+    print("displaces delivery time and never the interval grid itself.")
     print()
 
     # --- 2. alignment error and drift -------------------------------------
