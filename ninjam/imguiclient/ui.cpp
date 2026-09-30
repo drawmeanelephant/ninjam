@@ -474,7 +474,10 @@ static void draw_connection_section()
     g_auto_reconnect.set_enabled(auto_reconnect,g_client.GetStatus(),ImGui::GetTime());
   ImGui::Spacing();
 
-  if (st == NJClient::NJC_STATUS_CANTCONNECT || st == NJClient::NJC_STATUS_INVALIDAUTH)
+  // DISCONNECTED belongs here too since issue #29: a byte stream that stopped
+  // parsing and a socket that closed share that one status code, so this
+  // string is the only thing that tells them apart.
+  if (st == NJClient::NJC_STATUS_DISCONNECTED || st == NJClient::NJC_STATUS_CANTCONNECT || st == NJClient::NJC_STATUS_INVALIDAUTH)
   {
     const char *e=g_client.GetErrorStr();
     if (e && *e)
