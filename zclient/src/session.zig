@@ -422,8 +422,6 @@ pub const Session = struct {
     }
 
     fn closeLive(self: *Session) void {
-        // comptime-gated: with -Dlive=false no device can ever have opened,
-        // and this keeps the miniaudio symbols out of the link entirely
         if (!audio.enabled) return;
         if (self.play_wav_active) {
             self.play_writer.close() catch |e| {

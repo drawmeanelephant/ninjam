@@ -1,0 +1,3 @@
+REFPEER RESULT ok=0 remote_channels_seen=231 remote_peak=0.000000 rx_energy=22368.000087 chat_lines=2 primary_user=0 primary_channels=1 primary_ch_peaks=0.000000
+chat: TOPIC |  | zclient interop demo |  | 
+chat: JOIN | alice |  |  | 
