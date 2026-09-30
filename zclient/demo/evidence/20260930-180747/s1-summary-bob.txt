@@ -1,0 +1,63 @@
+[    0.000] connecting to 127.0.0.1:20491 as anonymous:bob
+[    0.000] connected
+[    0.005] S>C 0x00 CHALLENGE challenge=1203568a2a28cbbe caps=0x00000300 ver=0x00020000 keepalive=3s license=0b
+[    0.005] C>S 0x80 AUTH_USER user=anonymous:bob hash=e32ab13191a39f02bd7cf1ce8cb747314ba8ed7e caps=0
+[    0.017] S>C 0x01 AUTH_OK user=bob@127.0.0.1 maxchan=2
+[    0.017] C>S 0x82 SET_CHANNEL_INFO n=1
+[    0.509] S>C 0x02 CONFIG bpm=100 bpi=8
+[    0.510] interval clock started: 230400 samples (4800ms)
+[    0.510] S>C 0x03 USERINFO nrecords=1
+[    0.510]   user=alice ch=0 active=1 name=zclient-alice flags=0x00
+[    0.510] C>S 0x81 SET_USERMASK user=alice mask=0x00000001
+[    0.510] S>C 0xC0 CHAT TOPIC:  | zclient interop demo |  | 
+[    0.510] S>C 0xC0 CHAT MSG: alice | hello from alice (zclient) |  | 
+[    0.532] C>S 0x83 UPLOAD_BEGIN guid=6f0ffb6dc5ec93e760995d2d60ef90b6 chidx=0 interval=0
+[    0.532] C>S 0x84 WRITE guid=6f0ffb6dc5ec93e760995d2d60ef90b6 flags=0 bytes=3552
+[    3.003] C>S 0xC0 CHAT MSG: hello from bob (zclient anonymous)
+[    3.004] S>C 0xC0 CHAT MSG: bob@127.0.0.1 | hello from bob (zclient anonymous) |  | 
+[    3.173] C>S 0x84 WRITE guid=6f0ffb6dc5ec93e760995d2d60ef90b6 flags=0 bytes=4277
+[    4.858] S>C 0x04 DOWNLOAD_BEGIN user=alice ch=0 guid=470f3d9eb650dbf44a337557b4988277 fourcc=0x7647474F
+[    5.318] C>S 0x84 WRITE guid=6f0ffb6dc5ec93e760995d2d60ef90b6 flags=1 bytes=3674
+[    5.318] interval 0 complete (230400 samples, 4800ms)
+[    5.341] C>S 0x83 UPLOAD_BEGIN guid=4a73545ed06f0b649a27e0546adc4ca0 chidx=0 interval=1
+[    5.341] C>S 0x84 WRITE guid=4a73545ed06f0b649a27e0546adc4ca0 flags=0 bytes=3552
+[    7.407] S>C 0x05 WRITE user=alice bytes=3552 flags=0 total=3552
+[    7.407] S>C 0x05 WRITE user=alice bytes=4257 flags=0 total=7809
+[    7.956] C>S 0x84 WRITE guid=4a73545ed06f0b649a27e0546adc4ca0 flags=0 bytes=4249
+[    9.624] S>C 0x05 WRITE user=alice bytes=3965 flags=1 total=11774
+[    9.624] download complete user=alice ch=0 bytes=11774 fourcc=0x7647474F
+[    9.627] decoded user=alice ch=0 srate=48000 ch=1 frames=230400 rms=0.355580
+[    9.627] wav open /tmp/zclient-demo/s1-B/alice_ch0.wav (srate=48000)
+[    9.648] S>C 0x04 DOWNLOAD_BEGIN user=alice ch=0 guid=fa1d4c32ff64ce1a18972f329142361b fourcc=0x7647474F
+[   10.129] C>S 0x84 WRITE guid=4a73545ed06f0b649a27e0546adc4ca0 flags=1 bytes=3715
+[   10.129] interval 1 complete (230400 samples, 4800ms)
+[   10.152] C>S 0x83 UPLOAD_BEGIN guid=c969d54161b7420942b19a64626082ca chidx=0 interval=2
+[   10.152] C>S 0x84 WRITE guid=c969d54161b7420942b19a64626082ca flags=0 bytes=3552
+[   12.203] S>C 0x05 WRITE user=alice bytes=3552 flags=0 total=3552
+[   12.203] S>C 0x05 WRITE user=alice bytes=4255 flags=0 total=7807
+[   12.749] C>S 0x84 WRITE guid=c969d54161b7420942b19a64626082ca flags=0 bytes=4249
+[   14.430] S>C 0x05 WRITE user=alice bytes=3964 flags=1 total=11771
+[   14.430] download complete user=alice ch=0 bytes=11771 fourcc=0x7647474F
+[   14.432] decoded user=alice ch=0 srate=48000 ch=1 frames=230400 rms=0.355598
+[   14.454] S>C 0x04 DOWNLOAD_BEGIN user=alice ch=0 guid=4b5661cf3161faa356ceef0da40d8342 fourcc=0x7647474F
+[   14.918] C>S 0x84 WRITE guid=c969d54161b7420942b19a64626082ca flags=1 bytes=3713
+[   14.918] interval 2 complete (230400 samples, 4800ms)
+[   14.940] C>S 0x83 UPLOAD_BEGIN guid=4c4cf22eeeb4d2f8bc0dcfdf56c464a1 chidx=0 interval=3
+[   14.940] C>S 0x84 WRITE guid=4c4cf22eeeb4d2f8bc0dcfdf56c464a1 flags=0 bytes=3552
+[   17.001] S>C 0x05 WRITE user=alice bytes=3552 flags=0 total=3552
+[   17.001] S>C 0x05 WRITE user=alice bytes=4254 flags=0 total=7806
+[   17.547] C>S 0x84 WRITE guid=4c4cf22eeeb4d2f8bc0dcfdf56c464a1 flags=0 bytes=4246
+[   19.231] S>C 0x05 WRITE user=alice bytes=3965 flags=1 total=11771
+[   19.231] download complete user=alice ch=0 bytes=11771 fourcc=0x7647474F
+[   19.236] decoded user=alice ch=0 srate=48000 ch=1 frames=230400 rms=0.355314
+[   19.261] S>C 0x04 DOWNLOAD_BEGIN user=alice ch=0 guid=8d4100805a6b41046e379e85ed0cdc20 fourcc=0x7647474F
+[   19.723] C>S 0x84 WRITE guid=4c4cf22eeeb4d2f8bc0dcfdf56c464a1 flags=1 bytes=3713
+[   19.723] interval 3 complete (230400 samples, 4800ms)
+[   19.746] C>S 0x83 UPLOAD_BEGIN guid=4940420225aa7176e98273b8b0f0de02 chidx=0 interval=4
+[   19.746] C>S 0x84 WRITE guid=4940420225aa7176e98273b8b0f0de02 flags=0 bytes=3552
+[   21.811] S>C 0x05 WRITE user=alice bytes=3552 flags=0 total=3552
+[   21.811] S>C 0x05 WRITE user=alice bytes=4255 flags=0 total=7807
+[   22.359] C>S 0x84 WRITE guid=4940420225aa7176e98273b8b0f0de02 flags=0 bytes=4255
+[   24.019] wav /tmp/zclient-demo/s1-B/alice_ch0.wav frames=691200 srate=48000 rms=0.355473 peak=0.522949
+[   24.019] session end: ok=true
+RESULT ok=true err="" msgs_sent=23 msgs_recv=22 bytes_sent=54441 bytes_recv=43730 intervals_uploaded=4 upload_channels=1 upload_chunks=14 upload_bytes=53851 intervals_downloaded=3 download_bytes=43123 samples_decoded=691200 chat_sent=1 chat_received=3 wav_count=1 wav_rms_avg=0.355473 live=false device="" dev_srate=0 capture_frames=0 capture_starved=0 capture_rms=0.000000 capture_peak=0.000000 playback_frames=0 playback_rms=0.000000 playback_peak=0.000000 audio_underruns=0 audio_overruns=0
