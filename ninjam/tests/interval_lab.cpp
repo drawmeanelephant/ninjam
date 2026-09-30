@@ -137,22 +137,18 @@ static bool port_accepts(int port)
   return ok;
 }
 
-// the value at position idx of a colon-separated numeric list, or 0.0 when
-// the list is shorter. Same shape as the --ppm / --client-delay parsing.
-static double nth_of_colon_list(const std::string &list, int idx)
+// The conditioner counters are per-THREAD and cumulative, and the pump loop
+// below drives every simulated client from one thread, so a plain snapshot
+// would report the same grand total on every client row. Reset at the top of
+// each client's pump window and fold the window into that client instead, so
+// the columns are genuinely per client.
+static void add_cond(NJCond::Stats &dst, const NJCond::Stats &src)
 {
-  int seen=0;
-  const char *p=list.c_str();
-  while (*p)
-  {
-    const double v=atof(p);
-    if (seen==idx) return v;
-    const char *c=strchr(p,':');
-    if (!c) break;
-    p=c+1;
-    seen++;
-  }
-  return 0.0;
+  dst.audio_seen += src.audio_seen;
+  dst.audio_dropped += src.audio_dropped;
+  dst.audio_delayed += src.audio_delayed;
+  dst.audio_bytes += src.audio_bytes;
+  dst.delay_applied_ms += src.delay_applied_ms;
 }
 
 // The server runs in its own process, so its downlink conditioner comes
@@ -176,26 +172,13 @@ static lab_proc_t spawn_server(const LabConfig &cfg, int port, const char *logpa
   if (pid < 0) return LAB_BAD_PROC;
   if (pid == 0)
   {
-    char lv[32],ld[32],lj[32],lr[96];
+    char lv[32],ld[32],lj[32];
     snprintf(lv,sizeof(lv),"%g",cfg.down_loss);
     snprintf(ld,sizeof(ld),"%g",cfg.down_delay);
     snprintf(lj,sizeof(lj),"%g",cfg.down_jitter);
-    // the server's receive-side hold is PER CLIENT, but the server process
-    // has one thread: it serves every connection in a single loop. So the
-    // per-client list is passed through as "a:b:c" and the server hands each
-    // user connection the hold of the client on the far side of it. Only the
-    // entries that exist are sent -- the list is sized to the client count,
-    // never padded, so a stray index cannot read past it.
-    {
-      const int n=(int)cfg.client_delay.size() < 8 ? (int)cfg.client_delay.size() : 8;
-      lr[0]=0;
-      for (int q=0; q < n; q ++)
-        snprintf(lr+strlen(lr),sizeof(lr)-strlen(lr),"%s%g",q?":":"",cfg.client_delay[q]);
-    }
     setenv("NJCOND_AUDIO_LOSS_PCT",lv,1);
     setenv("NJCOND_AUDIO_DELAY_MS",ld,1);
     setenv("NJCOND_AUDIO_JITTER_MS",lj,1);
-    setenv("NJCOND_AUDIO_RX_DELAY_LIST",lr,1);
     execl(cfg.srvpath.c_str(),cfg.srvpath.c_str(),
           (cfg.outdir+"/server.cfg").c_str(),"-port",portstr,"-logfile",logpath,(char *)NULL);
     _exit(127);
@@ -286,7 +269,7 @@ struct SimClient
       next_k(0.0), burst_rem(0), burst_pos(0), markers_emitted(0),
       markers_skipped(0), started(false), channel_made(false), t_start_s(0.0), t_connected_s(-1.0),
       t_status_ok_s(-1.0), t_first_remote_audio_s(-1.0), t_first_marker_s(-1.0),
-      first_marker_from(-1), markers_decoded(0), local_markers_decoded(0)
+      first_marker_from(-1), markers_decoded(0), local_markers_decoded(0), cond()
   {
     name="anon";
   }
@@ -384,8 +367,9 @@ int main(int argc, char **argv)
       "  --up-loss=PCT          drop this %% of client->server audio messages\n"
       "  --up-delay=MS --up-jitter=MS\n"
       "  --down-loss=PCT --down-delay=MS --down-jitter=MS   (applied in the server)\n"
-      "  --client-delay=a:b:c   added one-way latency per client, ms, symmetric\n"
-      "                         (client->server AND server->client), i.e. real RTT\n"
+      "  --client-delay=a:b:c   added one-way latency per client, ms, applied\n"
+      "                         in BOTH directions (client->server and\n"
+      "                         server->client), i.e. real symmetric RTT\n"
       "  --late-join=SEC        start one extra client SEC seconds in\n");
     return 2;
   }
@@ -547,23 +531,29 @@ int main(int argc, char **argv)
       if (n > CHUNK_MAX) n=CHUNK_MAX;
       if (n < 1) continue;
 
-      // ---- uplink conditioner for this client only ----
+      // ---- conditioner for this client only ----
       // c.idx can exceed the list for a late joiner (the list is sized to
       // the initial client count); a client that joined late has no entry,
       // which means no added latency.
+      //
+      // --client-delay is one-way latency applied in BOTH directions, so a
+      // client's link gets cdel on the way up (TX profile) and cdel on the
+      // way down (receive-side hold). The whole thing lives on the client
+      // thread rather than splitting across the server: the server's receive
+      // hold is a per-THREAD value (NJCond::rx_delay_ms) and the server
+      // pumps every connection on its one main thread, so a per-connection
+      // hold set from there would be last-wins for all of them. Each
+      // simulated client has its own thread and its own connection, so the
+      // client end can carry both halves exactly.
       const double cdel = c.idx < (int)cfg.client_delay.size()
         ? cfg.client_delay[c.idx] : 0.0;
+      NJCond::reset_stats();
       NJCond::Profile prof;
       prof.audio_loss_pct=cfg.up_loss;
-      prof.audio_delay_ms=cfg.up_delay + cdel*0.5;
+      prof.audio_delay_ms=cfg.up_delay + cdel;
       prof.audio_jitter_ms=cfg.up_jitter;
-      prof.audio_rx_delay_ms=0.0; // the inbound half lives in set_rx_delay below
       NJCond::set_profile(prof);
-      // the client's inbound half of its symmetric latency is a RECEIVE-side
-      // hold, because one process receives for every other participant on
-      // shared threads: the delay must be a property of the connection being
-      // pumped, not of whichever client thread last wrote its TX profile.
-      NJCond::set_rx_delay(cdel*0.5);
+      NJCond::set_rx_delay(cdel);
 
       // ---- network ----
       for (int r=0; r < 32; r ++)
@@ -729,7 +719,7 @@ int main(int argc, char **argv)
       }
 
       c.processed+=n;
-      c.cond=NJCond::get_stats();
+      add_cond(c.cond,NJCond::get_stats());
     }
 
     // ---- synchronous clock-domain probe ----

@@ -98,15 +98,23 @@ fi
 # under (b) it does not. mark960 and mark3840 bracket the default, and
 # mark3840iv2s combines the long burst with a short interval.
 #
-# Real round-trip latency (issue #22). --client-delay adds a SYMMETRIC
-# one-way latency per client (client->server AND server->client), which is
-# what a real deployment's RTT looks like to the interval model. The rtt-spread
-# scenario puts three clients at 0 / +50 / +200 ms; rtt100 gives every client
-# the same +100 ms, to separate "does added latency move anything" from "does
-# a latency SPREAD between clients move anything". Prediction under test: the
-# interval clock is driven by each client's own sample counter, not by message
-# arrival, so added latency displaces delivery time without moving playout
-# time -- delays rise by exactly the injected amount, alignment stays put.
+# Real round-trip latency (issue #22). --client-delay adds a one-way latency
+# per client, applied in BOTH directions (client->server AND server->client),
+# which is what a real deployment's RTT looks like to the interval model. The
+# rtt-spread scenario puts three clients at 0 / +50 / +200 ms; rtt100 gives
+# every client the same +100 ms, to separate "does added latency move
+# anything" from "does a latency SPREAD between clients move anything".
+# Prediction under test: the interval clock is driven by each client's own
+# sample counter, not by message arrival, so added latency should displace
+# delivery time without moving playout time -- delays rise by the injected
+# amount, alignment stays put.
+#
+# MEASURED: the second half holds, the first does not. Neither the delay
+# column nor the alignment figures move at all; the rtt rows are
+# indistinguishable from baseline in every table. The two-interval pipeline
+# absorbs the latency outright instead of merely displacing delivery time,
+# because an upload arriving 200 ms into its own interval and one arriving
+# 200 ms + RTT late both make the same interval close. See REPORT.md section 5.
 scenarios() {
   cat <<EOF
 baseline|$DRIFT_SECS||3

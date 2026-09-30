@@ -348,14 +348,19 @@ struct LabConfig
   // server downlink profile (passed to the server process via NJCOND_*)
   double down_loss, down_delay, down_jitter;
 
-  // Per-client symmetric added latency, in ms of one-way added delay
-  // (client -> server AND server -> client), colon-separated one per client,
-  // missing entries 0. Applied half on the client's TX thread (TX profile
-  // above) and half in the server process on its connection for that client
-  // (NJCOND_AUDIO_RX_DELAY_LIST, read per connection in usercon.cpp).
-  // Real RTT is symmetric to a good approximation, and the uplink TX path
-  // alone cannot express it: one process would otherwise receive for all
-  // clients with the delay of whichever client thread last set its profile.
+  // Per-client added latency, in ms of ONE-WAY delay applied in both
+  // directions (client -> server AND server -> client), colon-separated one
+  // per client, missing entries 0. Real RTT is symmetric to a good
+  // approximation, so one number per client describes a link.
+  //
+  // Both halves are injected from the CLIENT end: the up half through the TX
+  // profile (audio_delay_ms, above), the down half through the receive-side
+  // hold NJCond::set_rx_delay. Splitting it across the server instead does
+  // not work, because the receive-side hold is per-THREAD and the server
+  // pumps every one of its connections on a single main thread -- a hold set
+  // per connection there would be last-wins across all of them. Each
+  // simulated client has its own thread and its own connection, so the client
+  // end can carry a distinct hold per client exactly.
   std::vector<double> client_delay;
   std::string client_delay_list; // raw --client-delay value, echoed to the summary
 

@@ -51,13 +51,10 @@ namespace NJCond
     double audio_loss_pct;   // percent of audio messages to drop, 0..100
     double audio_delay_ms;   // constant extra delay applied to audio messages
     double audio_jitter_ms;  // uniform random extra delay in [0, this]
-    double audio_rx_delay_ms; // constant extra delay applied to audio messages
-                             // on RECEIVE (see rx_delay_ms below)
 
     bool active() const
     {
-      return audio_loss_pct > 0.0 || audio_delay_ms > 0.0 ||
-             audio_jitter_ms > 0.0 || audio_rx_delay_ms > 0.0;
+      return audio_loss_pct > 0.0 || audio_delay_ms > 0.0 || audio_jitter_ms > 0.0;
     }
   };
 
@@ -85,15 +82,21 @@ namespace NJCond
   void init_from_env();
 
   // The delay/jitter profile (audio_delay_ms / audio_jitter_ms) is applied
-  // where messages are SENT, on the sending thread. A receiver-side delay
-  // cannot go through that path: one process receives on behalf of every
-  // other participant, all on shared threads, so "hold what I receive for X
-  // ms" has to be a property of the receiving side. This returns this
-  // thread's configured receive-side delay for audio messages; 0.0 means no
-  // hold. The lab harness calls it from Net_Connection::Run, so the value is
-  // read on whichever thread runs the connection -- for a lab client that is
-  // the client's own pump thread; for the server process it is the single
-  // server thread, which sets it from NJCOND_AUDIO_RX_DELAY_MS.
+  // where messages are SENT, on the sending thread. Symmetric per-link
+  // latency also needs the receiving end held, which that path cannot do: a
+  // process receives on behalf of every other participant, all on shared
+  // threads, so "hold what I receive for X ms" must be a property of the
+  // thread RUNNING the receiving connection. Net_Connection::Run reads this
+  // for every completed audio message it parks, so the value applies to
+  // whatever connection(s) that thread drives.
+  //
+  // This is per-THREAD, not per-connection, which is exactly why it works
+  // for the interval lab: every simulated client is pumped on its own thread
+  // with its own connection, so one client sets it and only that client sees
+  // it. It cannot give two connections on the SAME thread different holds,
+  // so the lab applies a link's full one-way delay from the client end
+  // rather than splitting it across a shared server thread (see
+  // --client-delay in tests/interval_lab.cpp).
   double rx_delay_ms();
 
   // set this thread's receive-side hold for audio messages, in ms. 0.0 (the

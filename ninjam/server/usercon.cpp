@@ -27,8 +27,6 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#include <stdlib.h>
-#include <string.h>
 #else
 #include <stdlib.h>
 #include <string.h>
@@ -38,7 +36,6 @@
 
 #include "usercon.h"
 #include "../mpb.h"
-#include "../netcond.h"
 
 #include "../../WDL/rng.h"
 #include "../../WDL/sha.h"
@@ -1120,41 +1117,6 @@ void User_Group::AddConnection(JNL_IConnection *con, int isres)
 {
   User_Connection *p=new User_Connection(con,this);
   if (isres) p->m_reserved=1;
-
-  // Interval-model lab: a per-connection receive-side hold for audio
-  // messages. NJCOND_AUDIO_RX_DELAY_LIST is "a:b:c...", the hold for the
-  // client at that position in the session -- the server has one thread, so
-  // the profile cannot be selected per connection from NJCond::rx_delay_ms()
-  // and the server reads the connection's slot when the connection is added.
-  // Unset, or fewer entries than clients, means no hold for the rest. This
-  // is the downlink half of the lab's --client-delay (client <-> server
-  // symmetric added latency); the uplink half runs on the client threads.
-  // Only audio-bearing messages are ever held, and the hold preserves wire
-  // order (see Net_Connection::enqueueRxDelayed).
-  {
-    const char *s=getenv("NJCOND_AUDIO_RX_DELAY_LIST");
-    if (s && *s)
-    {
-      // the connection being added is slot m_users.GetSize() (0-based) of
-      // the session; entries beyond the end of the list mean no hold
-      const int slot=(int)m_users.GetSize();
-      double d=0.0;
-      int seen=0;
-      const char *p=s;
-      while (*p)
-      {
-        d=atof(p);
-        if (seen==slot) break;
-        const char *c=strchr(p,':');
-        if (!c) { d=0.0; break; }
-        p=c+1;
-        seen++;
-      }
-      if (seen < slot) d=0.0;
-      NJCond::set_rx_delay(d);
-    }
-  }
-
   m_users.Add(p);
 }
 

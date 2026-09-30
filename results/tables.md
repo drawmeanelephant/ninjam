@@ -30,8 +30,8 @@ structure showing through.
 | mark3840     | 4000.00    | 39.99          | 8000.04   | 8000.06      | 8000.10   | 2.0000                  |
 | mark3840iv2s | 2000.00    | 39.99          | 4000.04   | 4000.06      | 4000.10   | 2.0000                  |
 | mark960      | 4000.00    | 9.99           | 8000.05   | 8000.06      | 8000.07   | 2.0000                  |
-| rtt-spread   | 4000.00    | 0.00           | 8000.08   | 8000.09      | 8000.11   | 2.0000                  |
-| rtt100       | 4000.00    | 0.00           | 8000.08   | 8000.09      | 8000.11   | 2.0000                  |
+| rtt-spread   | 4000.00    | 0.00           | 8000.04   | 8000.05      | 8000.07   | 2.0000                  |
+| rtt100       | 4000.00    | 0.00           | 8000.04   | 8000.05      | 8000.07   | 2.0000                  |
 
 `centre bias ms` is the detector's half-burst centring offset,
 (mark_len-1)/2 samples, already removed from the delays above. It is
@@ -45,12 +45,14 @@ started emitting centre-to-centre errors; those need no correction.
 being emitted and being heard. See REPORT.md for what that number means
 for the interval model.
 
-The rtt* scenarios add a symmetric per-client network delay
-(--client-delay, client->server AND server->client). Its contribution is
-visible in this table and nowhere else: the delay column moves by the
-injected amount, pair by pair, while the alignment tables below do not.
-That split is the prediction under test in issue #22 -- added latency
-displaces delivery time and never the interval grid itself.
+The rtt* scenarios add a symmetric per-client one-way latency
+(--client-delay: the same amount on the way up and the way down). Issue
+#22 predicted the contribution would be visible HERE -- the delay column
+rising by the injected amount, pair by pair, while the alignment tables
+below stayed put. Measured, the prediction does not hold: the delay
+column does not move at all, and the rtt rows match baseline in this
+table as well as in section 2. Two-interval structure absorbs the added
+latency outright rather than merely displacing delivery time.
 
 ## 2. Pairwise interval-alignment error and clock drift
 
@@ -83,8 +85,8 @@ pair with the largest |drift|. Predicted drift for a pair is
 | mark3840     | 15      | 0.05        | 0.05       | 0.05      | 0.00         | 0         | 1<-0       | 0.02         | 0.00      |
 | mark3840iv2s | 16      | 0.05        | 0.05       | 0.05      | 0.00         | 0         | 0<-1       | 0.00         | 0.00      |
 | mark960      | 15      | 0.02        | 0.02       | 0.02      | 0.00         | 0         | 0<-2       | -0.01        | 0.00      |
-| rtt-spread   | 15      | 0.03        | 0.03       | 0.03      | 0.00         | 0         | 0<-2       | -0.00        | 0.00      |
-| rtt100       | 15      | 0.03        | 0.03       | 0.03      | 0.00         | 0         | 2<-1       | -0.00        | 0.00      |
+| rtt-spread   | 15      | 0.03        | 0.03       | 0.03      | 0.00         | 0         | 2<-1       | 0.01         | 0.00      |
+| rtt100       | 15      | 0.03        | 0.03       | 0.03      | 0.00         | 0         | 2<-1       | 0.01         | 0.00      |
 
 `align max` is the raw figure: how far apart two clients are, whole
 intervals included. `align mod iv` is the same figure with whole-interval
@@ -278,23 +280,23 @@ see REPORT.md.
 
 | pair      | ppm l/e | delay   | err @k=1 | err @k=15 | change | drift ms/min | slips | resid @first | resid @last |
 |-----------|---------|---------|----------|-----------|--------|--------------|-------|--------------|-------------|
-| 0 hears 1 | +0 / +0 | 8000.11 | 8000.09  | 8000.13   | 0.04   | -0.00        | 0     | -0.02        | 0.02        |
-| 0 hears 2 | +0 / +0 | 8000.09 | 8000.07  | 8000.11   | 0.04   | -0.00        | 0     | -0.02        | 0.02        |
-| 1 hears 0 | +0 / +0 | 8000.08 | 8000.06  | 8000.10   | 0.04   | -0.00        | 0     | -0.02        | 0.02        |
-| 1 hears 2 | +0 / +0 | 8000.10 | 8000.07  | 8000.12   | 0.04   | -0.00        | 0     | -0.02        | 0.02        |
-| 2 hears 0 | +0 / +0 | 8000.08 | 8000.06  | 8000.10   | 0.04   | -0.00        | 0     | -0.02        | 0.02        |
-| 2 hears 1 | +0 / +0 | 8000.11 | 8000.09  | 8000.14   | 0.04   | -0.00        | 0     | -0.02        | 0.02        |
+| 0 hears 1 | +0 / +0 | 8000.07 | 8000.11  | 8000.11   | 0.00   | 0.01         | 0     | 0.04         | 0.04        |
+| 0 hears 2 | +0 / +0 | 8000.05 | 8000.09  | 8000.09   | 0.00   | 0.01         | 0     | 0.04         | 0.04        |
+| 1 hears 0 | +0 / +0 | 8000.04 | 8000.08  | 8000.08   | 0.00   | 0.01         | 0     | 0.04         | 0.04        |
+| 1 hears 2 | +0 / +0 | 8000.05 | 8000.10  | 8000.10   | 0.00   | 0.01         | 0     | 0.04         | 0.04        |
+| 2 hears 0 | +0 / +0 | 8000.04 | 8000.08  | 8000.08   | 0.00   | 0.01         | 0     | 0.04         | 0.04        |
+| 2 hears 1 | +0 / +0 | 8000.07 | 8000.11  | 8000.11   | 0.00   | 0.01         | 0     | 0.04         | 0.04        |
 
 ### rtt100
 
 | pair      | ppm l/e | delay   | err @k=1 | err @k=15 | change | drift ms/min | slips | resid @first | resid @last |
 |-----------|---------|---------|----------|-----------|--------|--------------|-------|--------------|-------------|
-| 0 hears 1 | +0 / +0 | 8000.11 | 8000.15  | 8000.13   | -0.02  | -0.00        | 0     | 0.04         | 0.02        |
-| 0 hears 2 | +0 / +0 | 8000.09 | 8000.14  | 8000.11   | -0.02  | -0.00        | 0     | 0.04         | 0.02        |
-| 1 hears 0 | +0 / +0 | 8000.08 | 8000.12  | 8000.10   | -0.02  | -0.00        | 0     | 0.04         | 0.02        |
-| 1 hears 2 | +0 / +0 | 8000.10 | 8000.14  | 8000.12   | -0.02  | -0.00        | 0     | 0.04         | 0.02        |
-| 2 hears 0 | +0 / +0 | 8000.08 | 8000.12  | 8000.10   | -0.02  | -0.00        | 0     | 0.04         | 0.02        |
-| 2 hears 1 | +0 / +0 | 8000.11 | 8000.16  | 8000.14   | -0.02  | -0.00        | 0     | 0.04         | 0.02        |
+| 0 hears 1 | +0 / +0 | 8000.07 | 8000.07  | 8000.07   | 0.00   | 0.01         | 0     | 0.00         | 0.00        |
+| 0 hears 2 | +0 / +0 | 8000.05 | 8000.05  | 8000.05   | 0.00   | 0.01         | 0     | 0.00         | 0.00        |
+| 1 hears 0 | +0 / +0 | 8000.04 | 8000.04  | 8000.04   | 0.00   | 0.01         | 0     | 0.00         | 0.00        |
+| 1 hears 2 | +0 / +0 | 8000.05 | 8000.05  | 8000.05   | 0.00   | 0.01         | 0     | 0.00         | 0.00        |
+| 2 hears 0 | +0 / +0 | 8000.04 | 8000.04  | 8000.04   | 0.00   | 0.01         | 0     | 0.00         | 0.00        |
+| 2 hears 1 | +0 / +0 | 8000.07 | 8000.07  | 8000.07   | 0.00   | 0.01         | 0     | 0.00         | 0.00        |
 
 `resid` is the error from the pair's own median delay, wrapped into
 +/- half an interval: the real skew. `change` is the raw figure, so a
@@ -326,8 +328,8 @@ stream, so TCP would turn a dropped packet into latency rather than loss.
 | mark3840     | 0% / 0%      | 0 / 0             | 48              | 96               | 90      | 93.8%          | 882             | 0       | 0.00%            | 0            |
 | mark3840iv2s | 0% / 0%      | 0 / 0             | 48              | 96               | 96      | 100.0%         | 1782            | 0       | 0.00%            | 0            |
 | mark960      | 0% / 0%      | 0 / 0             | 48              | 96               | 90      | 93.8%          | 882             | 0       | 0.00%            | 0            |
-| rtt-spread   | 0% / 0%      | 0 / 0             | 48              | 96               | 90      | 93.8%          | 882             | 0       | 0.00%            | 0            |
-| rtt100       | 0% / 0%      | 0 / 0             | 48              | 96               | 90      | 93.8%          | 882             | 0       | 0.00%            | 0            |
+| rtt-spread   | 0% / 0%      | 0 / 0             | 48              | 96               | 90      | 93.8%          | 294             | 0       | 0.00%            | 0            |
+| rtt100       | 0% / 0%      | 0 / 0             | 48              | 96               | 90      | 93.8%          | 294             | 0       | 0.00%            | 0            |
 
 `expected decodes` counts marker emissions weighted by the number of
 other clients that should hear each one, so the detection rate is a
@@ -367,7 +369,7 @@ interval rather than being slightly out of phase.
 | mark3840     | 3     | 5871    | 0.00          | 0.00           | 0.00        | 0.00        | 0-1        | 0.00%     | 0.00         |
 | mark3840iv2s | 3     | 5865    | 0.00          | 0.00           | 0.00        | 0.00        | 0-1        | 0.00%     | 0.00         |
 | mark960      | 3     | 5916    | 0.00          | 0.00           | 0.00        | 0.00        | 0-1        | 0.00%     | 0.00         |
-| rtt-spread   | 3     | 5901    | 0.00          | 0.00           | 0.00        | 0.00        | 0-1        | 0.00%     | 0.00         |
+| rtt-spread   | 3     | 5907    | 0.00          | 0.00           | 0.00        | 0.00        | 0-1        | 0.00%     | 0.00         |
 | rtt100       | 3     | 5904    | 0.00          | 0.00           | 0.00        | 0.00        | 0-1        | 0.00%     | 0.00         |
 
 ## 6. Join in progress
@@ -480,7 +482,7 @@ the comparison -- they carry a whole-interval startup offset (see
 | mark3840     | 90          | 90             | 0           | 5871       | 0                       | 0.693    | 0.707       | 0.721    |
 | mark3840iv2s | 96          | 96             | 0           | 5865       | 0                       | 0.693    | 0.707       | 0.721    |
 | mark960      | 90          | 90             | 0           | 5916       | 0                       | 0.693    | 0.707       | 0.721    |
-| rtt-spread   | 90          | 90             | 0           | 5901       | 0                       | 0.693    | 0.707       | 0.721    |
+| rtt-spread   | 90          | 90             | 0           | 5907       | 0                       | 0.693    | 0.707       | 0.721    |
 | rtt100       | 90          | 90             | 0           | 5904       | 0                       | 0.693    | 0.707       | 0.721    |
 
 `markers skipped at emit` should be 0: a non-zero value means a marker was

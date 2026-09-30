@@ -1,5 +1,5 @@
-tag=rtt-spread duration=200.0s markers=90 clock_rows=5901
-  client 0 ppm=+0 status_ok=0.02s first_audio=20.11s first_marker=20.06s emitted=16 decoded=30 dropped=0/294
-  client 1 ppm=+0 status_ok=0.02s first_audio=20.11s first_marker=20.06s emitted=16 decoded=30 dropped=0/294
-  client 2 ppm=+0 status_ok=0.02s first_audio=20.11s first_marker=20.06s emitted=16 decoded=30 dropped=0/294
+tag=rtt-spread duration=200.0s markers=90 clock_rows=5907
+  client 0 ppm=+0 status_ok=0.02s first_audio=20.10s first_marker=20.05s emitted=16 decoded=30 dropped=0/98
+  client 1 ppm=+0 status_ok=0.02s first_audio=20.10s first_marker=20.05s emitted=16 decoded=30 dropped=0/98
+  client 2 ppm=+0 status_ok=0.02s first_audio=20.10s first_marker=20.05s emitted=16 decoded=30 dropped=0/98
   logs: results/rtt-spread/rtt-spread_markers.csv, results/rtt-spread/rtt-spread_clock.csv, results/rtt-spread/rtt-spread_summary.txt, results/rtt-spread/rtt-spread_clients.csv

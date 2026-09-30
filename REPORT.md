@@ -33,7 +33,7 @@ wall time is about 67 minutes, almost all of it the 10-11 minute drift runs.
 | alignment error at 1% / 5% / 10% bidirectional message loss | **0.03 / 0.03 / 0.03 ms** - unaffected |
 | markers still decoded at 1% / 5% / 10% loss | **87.5% / 84.7% / 72.2%** |
 | markers still decoded at 40 ms injected jitter | nominally 91.7%; under correct window accounting **100%** - nothing is lost (§4) |
-| round-trip latency, 0/+50/+200 ms one-way spread across clients | **absorbed exactly**: delay stays 8000.1 ms (baseline 8000.05), alignment **0.03 ms**, grid error 0.00 ms (§5) |
+| round-trip latency, 0/+50/+200 ms one-way spread across clients | **absorbed exactly**: delay stays 8000.04-8000.07 ms, the same range as baseline, alignment **0.03 ms**, grid error 0.00 ms (§5) |
 | uniform +100 ms one-way for every client | **indistinguishable from baseline** (§5) |
 | late joiner: connect -> first remote audio | **8.07 s** (120.04 s -> 128.11 s), i.e. 2.02 intervals |
 | late joiner's phase vs the rest of the session | **-0.02 ms** |
@@ -294,9 +294,9 @@ Under correct accounting jitter costs **zero** markers, which matches the
 
 Issue #22 asks whether the interval model absorbs a real deployment's RTT, or
 whether clients at different distances from the server drift apart. The
-scenario axis is a symmetric per-client added latency (`--client-delay`,
-applied one-way in each direction, client->server and server->client - what a
-real RTT looks like to the protocol). `rtt-spread` puts three clients at
+scenario axis is a per-client one-way added latency (`--client-delay`, applied
+in each direction, client->server and server->client - what a real RTT looks
+like to the protocol). `rtt-spread` puts three clients at
 0 / +50 / +200 ms one-way; `rtt100` gives every client +100 ms, to separate
 "latency" from "latency spread between clients". 200 s each, otherwise
 identical to baseline.
@@ -304,17 +304,22 @@ identical to baseline.
 | scenario | added one-way latency per client | median delay (pair range) | delay / interval | align max | align mod iv | clock phase max | audio msgs dropped |
 |----------|----------------------------------|---------------------------|------------------|-----------|--------------|-----------------|--------------------|
 | baseline | 0 / 0 / 0 ms | 8000.04-8000.07 ms | 2.0000 | 0.03 ms | 0.00 ms | 0.00 ms | 0 |
-| rtt-spread | 0 / +50 / +200 ms | 8000.08-8000.11 ms | 2.0000 | 0.03 ms | 0.00 ms | 0.00 ms | 0 |
-| rtt100 | +100 / +100 / +100 ms | 8000.08-8000.11 ms | 2.0000 | 0.03 ms | 0.00 ms | 0.00 ms | 0 |
+| rtt-spread | 0 / +50 / +200 ms | 8000.04-8000.07 ms | 2.0000 | 0.03 ms | 0.00 ms | 0.00 ms | 0 |
+| rtt100 | +100 / +100 / +100 ms | 8000.04-8000.07 ms | 2.0000 | 0.03 ms | 0.00 ms | 0.00 ms | 0 |
 
-Read the delay column against the injection: it does not move. If the added
-latency reached playout, rtt-spread's pairs would spread across a 250 ms range
-and every pair would sit 200 ms above baseline; measured, the whole table sits
-within 0.07 ms of baseline and the pair-to-pair spread is 0.03 ms - the same
-spread baseline has with no fault at all. Alignment, the wrapped grid error
-and the clock-domain probe are equally unmoved, and both runs decoded every
-marker that was measurable (the nominal 93.8% is the window arithmetic
-described in §8, not loss: zero audio messages were dropped).
+The delay column does not move at all: both rtt runs land in the same
+8000.04-8000.07 ms range as baseline, to the last digit. Had the added latency
+reached playout, rtt-spread's six pairs would have spread across a 250 ms range
+and every pair would have sat ~200 ms above baseline. Alignment, the wrapped
+grid error and the clock-domain probe are equally unmoved, and both runs
+decoded every marker that was measurable (the nominal 93.8% is the window
+arithmetic described in §8, not loss: zero audio messages were dropped).
+
+That the injection really happened is visible per client rather than taken on
+trust: in `rtt-spread` the per-client `audio_msgs_delayed` column reads 0 of 98
+for client0 (correctly no delay) and 98 of 98 for clients 1 and 2, while
+`rtt100` reads 98 of 98 for all three. The spread is genuinely distinct per
+client, and none of it reaches playout.
 
 The issue's prediction was that added latency displaces audio in delivery
 time without moving it in playout time, on the analogy of the 40 ms jitter
@@ -338,12 +343,14 @@ consume it.
 **Instrumentation note.** A symmetric per-client delay cannot live in the
 send-side injector alone: one process receives on behalf of every other
 participant, all on shared threads, so "hold what I receive for X ms" must be
-a property of the receiving connection. `Net_Connection` now mirrors its
-send-side delay queue on the receive side (`m_rxdelayq`), with the same
-closed-form properties: only the four audio message types are held, due times
-are clamped non-decreasing so the stream can never reorder, and the wire stays
-gated while anything is parked. The server reads its per-connection hold from
-`NJCOND_AUDIO_RX_DELAY_LIST`; the lab clients set theirs per pump thread.
+a property of the thread running the receiving connection.
+`Net_Connection` now mirrors its send-side delay queue on the receive side
+(`m_rxdelayq`), with the same closed-form properties: only the four audio
+message types are held, due times are clamped non-decreasing so the stream
+can never reorder, and the wire stays gated while anything is parked. Both
+halves of a client's one-way latency are applied from the client end (its own
+pump thread), because the server pumps every connection on one thread and a
+hold set there would be last-wins across all of them.
 
 ## 6. Join in progress
 
@@ -464,8 +471,9 @@ Each of these has a tracking issue.
   is protocol behaviour, not network behaviour.~~ **Resolved for RTT, which
   was the open question.** A symmetric per-client added latency of 0/+50/+200
   ms one-way (issue #22's suggested spread) moves nothing: the delay column
-  stays at exactly two intervals, alignment stays at 0.03 ms, and the uniform
-  +100 ms control is indistinguishable from baseline (§5). The remaining
+  stays in baseline's exact 8000.04-8000.07 ms range, alignment stays at
+  0.03 ms, and the uniform +100 ms control is indistinguishable from
+  baseline (§5). The remaining
   one-process caveat now covers clock skew sources and multi-hop routing, not
   latency. The 40 ms jitter "hint" turned out to understate the result: added
   latency does not even displace delivery time, because the pipeline runs on
