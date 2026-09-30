@@ -8,8 +8,8 @@ Measured, not assumed. Every number below comes from a raw log in
 ```
 
 That builds, runs the detector self-test (and refuses to produce numbers if
-it fails), runs all 11 scenarios, and regenerates `results/tables.md`. Total
-wall time is about 64 minutes, almost all of it the 10-11 minute drift runs.
+it fails), runs all 13 scenarios, and regenerates `results/tables.md`. Total
+wall time is about 67 minutes, almost all of it the 10-11 minute drift runs.
 `./tools/run_interval_lab.sh --list` prints the scenario names;
 `--only NAME[,NAME]` runs a subset; `--quick` shortens the durations.
 
@@ -32,7 +32,9 @@ wall time is about 64 minutes, almost all of it the 10-11 minute drift runs.
 | largest accumulated error that did **not** slip / smallest that did | **0.99 iv / 1.32 iv**, 18 pairs, **no exceptions** |
 | alignment error at 1% / 5% / 10% bidirectional message loss | **0.03 / 0.03 / 0.03 ms** - unaffected |
 | markers still decoded at 1% / 5% / 10% loss | **87.5% / 84.7% / 72.2%** |
-| markers still decoded at 40 ms injected jitter | **91.7%**, and those that arrive land within **0.14 ms** of each other |
+| markers still decoded at 40 ms injected jitter | nominally 91.7%; under correct window accounting **100%** - nothing is lost (§4) |
+| round-trip latency, 0/+50/+200 ms one-way spread across clients | **absorbed exactly**: delay stays 8000.04-8000.07 ms, the same range as baseline, alignment **0.03 ms**, grid error 0.00 ms (§5) |
+| uniform +100 ms one-way for every client | **indistinguishable from baseline** (§5) |
 | late joiner: connect -> first remote audio | **8.07 s** (120.04 s -> 128.11 s), i.e. 2.02 intervals |
 | late joiner's phase vs the rest of the session | **-0.02 ms** |
 | max interval-boundary phase error, any scenario, no audio involved | **0.98 ms** |
@@ -207,7 +209,7 @@ Three pairs that slipped are **not** in that table, and the reason matters:
 | drift8000 | 2<-1 | -16000 | t=500.1 | 2.00 iv | t=520.4 | 2.08 iv |
 | drift12000 | 2<-1 | -24000 | t=332.0 | 1.99 iv | t=340.2 | 2.04 iv |
 
-  These are the startup-offset pairs described in §8. Their first transition
+  These are the startup-offset pairs described in §9. Their first transition
   is a *second* boundary crossing relative to where they started, and it lands
   at exactly 2 intervals as the same one-interval rule predicts.
 - **Some pairs slip back.** Three pairs cross the boundary and later return to
@@ -268,18 +270,89 @@ intact. The session itself never desynchronised - the clock-domain probe
 | metric | value |
 |--------|-------|
 | messages dropped | 0 |
-| markers decoded | 91.7% (66 of 72) |
+| markers decoded | 91.7% (66 of 72) - but see below: nothing was actually lost |
 | spread of arrival error across detected markers | 8000.009 to 8000.146 ms, i.e. **0.14 ms** |
 | interval phase error, no audio involved | 0.00 ms median, 0.00 ms max |
 | alignment error | 0.03 ms |
 
 The audio that does arrive lands in the right place to within 0.14 ms,
 because the interval clock is driven by the client's own sample counter, not
-by message arrival. Network latency does not move the playout position. The
-8.3% of markers that are missing is the cost of a message arriving after the
-decoder has already moved past the point where it was needed.
+by message arrival. Network latency does not move the playout position.
 
-## 5. Join in progress
+**Correction made while measuring #22: no marker was actually lost here.**
+This section used to read "the 8.3% of markers that are missing is the cost of
+a message arriving after the decoder has already moved past the point where it
+was needed". That attribution was wrong. Every scenario with 12 s markers
+misses exactly marker k=0 of each client - jitter, rtt-spread and rtt100 all
+drop k=0 and nothing else, which no per-message fault explains (loss5 drops
+markers at random k). k=0's playout lands at/after the run's end window, so it
+was never measurable in these runs; the numerator should not have counted it.
+Under correct accounting jitter costs **zero** markers, which matches the
+"displaces nothing" headline far better than the old 8.3% did.
+
+## 5. Real round-trip latency is absorbed exactly like jitter
+
+Issue #22 asks whether the interval model absorbs a real deployment's RTT, or
+whether clients at different distances from the server drift apart. The
+scenario axis is a per-client one-way added latency (`--client-delay`, applied
+in each direction, client->server and server->client - what a real RTT looks
+like to the protocol). `rtt-spread` puts three clients at
+0 / +50 / +200 ms one-way; `rtt100` gives every client +100 ms, to separate
+"latency" from "latency spread between clients". 200 s each, otherwise
+identical to baseline.
+
+| scenario | added one-way latency per client | median delay (pair range) | delay / interval | align max | align mod iv | clock phase max | audio msgs dropped |
+|----------|----------------------------------|---------------------------|------------------|-----------|--------------|-----------------|--------------------|
+| baseline | 0 / 0 / 0 ms | 8000.04-8000.07 ms | 2.0000 | 0.03 ms | 0.00 ms | 0.00 ms | 0 |
+| rtt-spread | 0 / +50 / +200 ms | 8000.04-8000.07 ms | 2.0000 | 0.03 ms | 0.00 ms | 0.00 ms | 0 |
+| rtt100 | +100 / +100 / +100 ms | 8000.04-8000.07 ms | 2.0000 | 0.03 ms | 0.00 ms | 0.00 ms | 0 |
+
+The delay column does not move at all: both rtt runs land in the same
+8000.04-8000.07 ms range as baseline, to the last digit. Had the added latency
+reached playout, rtt-spread's six pairs would have spread across a 250 ms range
+and every pair would have sat ~200 ms above baseline. Alignment, the wrapped
+grid error and the clock-domain probe are equally unmoved, and both runs
+decoded every marker that was measurable (the nominal 93.8% is the window
+arithmetic described in §8, not loss: zero audio messages were dropped).
+
+That the injection really happened is visible per client rather than taken on
+trust: in `rtt-spread` the per-client `audio_msgs_delayed` column reads 0 of 98
+for client0 (correctly no delay) and 98 of 98 for clients 1 and 2, while
+`rtt100` reads 98 of 98 for all three. The spread is genuinely distinct per
+client, and none of it reaches playout.
+
+The issue's prediction was that added latency displaces audio in delivery
+time without moving it in playout time, on the analogy of the 40 ms jitter
+result. Measured, it does not even displace delivery: the emission-to-playback
+delay stays exactly two intervals with no added constant. The reason is that
+the pipeline already runs on interval slack - the server cannot forward an
+upload until its interval closes (§1), and an upload that arrives 200 ms into
+its own interval and one that arrives 200 ms plus RTT late both make the same
+interval close. Playout is pinned to the interval boundary either way, so the
+extra delivery time is absorbed by slack the model always had. The 40 ms
+jitter reading extends to 200 ms unchanged.
+
+Where would RTT start to matter? Only where it stops being small against the
+interval: a one-way latency plus jitter approaching the interval length (4 s
+here) would push uploads past the interval close, and a latency *spread*
+approaching half an interval (2 s) would put clients a whole interval apart.
+Real RTTs sit two to three orders of magnitude below both, so the interval
+model's latency budget is effectively the interval itself, and RTT does not
+consume it.
+
+**Instrumentation note.** A symmetric per-client delay cannot live in the
+send-side injector alone: one process receives on behalf of every other
+participant, all on shared threads, so "hold what I receive for X ms" must be
+a property of the thread running the receiving connection.
+`Net_Connection` now mirrors its send-side delay queue on the receive side
+(`m_rxdelayq`), with the same closed-form properties: only the four audio
+message types are held, due times are clamped non-decreasing so the stream
+can never reorder, and the wire stays gated while anything is parked. Both
+halves of a client's one-way latency are applied from the client end (its own
+pump thread), because the server pumps every connection on one thread and a
+hold set there would be last-wins across all of them.
+
+## 6. Join in progress
 
 A fourth client connects 120 s into a 300 s run.
 
@@ -294,7 +367,7 @@ running timeline; it just waits out the pipeline. Once in, its phase sits
 **-0.02 ms** from the rest of the session and its delay to the existing
 clients is 8000.03-8000.06 ms, indistinguishable from theirs to each other.
 
-## 6. Claims the data contradicts
+## 7. Claims the data contradicts
 
 **a. "Every client plays along to the previous interval" is off by one
 interval end-to-end.** The pitch describes the client-side half. Measured
@@ -326,7 +399,7 @@ matters most - a late joiner.** 8.07 s of dead air on join, then bit-level
 phase agreement. Nothing in the data suggests a joining client can disturb
 the session it joins.
 
-## 7. Measurement caveats, stated rather than smoothed over
+## 8. Measurement caveats, stated rather than smoothed over
 
 **The clock probe's "slip rate" column is not a drift measurement.** It reads
 3.7-4.3% for drift50, drift200 *and* drift8000, and exactly 0.00% for every
@@ -338,6 +411,17 @@ at slightly different instants, not whole-interval slips. Consequence: the
 probe bounds *phase* error tightly (max 0.98 ms wrapped, in any scenario) but
 cannot be used to count slips. The audio domain in section 2 is the authority
 on slips, and it is unambiguous there.
+
+**Marker counts in short runs are a window artefact.** In any run of length
+`T` with markers every `mark_period`, the last marker's playout lands about
+two intervals after its emission - at or past `T` - so the final marker of the
+run is never measurable, and with the window aligned the way these runs are,
+the *first* marker (k=0) is not either. This cost the study a real
+misattribution: the jitter section used to blame 8.3% of markers on "a message
+arriving after the decoder had moved past the point where it was needed",
+when the same 6-row deficit appears with zero messages dropped in every
+150-200 s scenario. Read detection percentages against the measurable window,
+not the nominal emission count (§4).
 
 **Markers are tones, not noise.** A broadband PRBS marker was the first design
 and it failed: it measured perfectly in the self-test (correlation 1.0) and
@@ -363,7 +447,7 @@ Every other client runs a detector over its own output. Because no shared time
 origin exists, the reported error is always a *difference* between two
 listeners' answers to the same event - pairwise, never absolute.
 
-## 8. What is still open
+## 9. What is still open
 
 Each of these has a tracking issue.
 
@@ -383,12 +467,19 @@ Each of these has a tracking issue.
   true interval delay is exactly two intervals with a 0.05 ms residual, and
   every scenario now reads 2.0000. See §1.1. Fixed in the harness.
   [#21](https://github.com/drawmeanelephant/ninjam/issues/21)
-- **All clients are in one process on one machine.** Inter-client skew here is
-  protocol behaviour, not network behaviour, and says nothing about a real
-  link with real RTT. Real deployments add RTT the interval model has to
-  absorb, which this experiment does not touch. The 40 ms jitter result hints
-  that added latency displaces delivery time without moving playout time, but
-  that was latency variation, not a latency offset, and 40 ms is not 200 ms.
+- ~~**All clients are in one process on one machine.** Inter-client skew here
+  is protocol behaviour, not network behaviour.~~ **Resolved for RTT, which
+  was the open question.** A symmetric per-client added latency of 0/+50/+200
+  ms one-way (issue #22's suggested spread) moves nothing: the delay column
+  stays in baseline's exact 8000.04-8000.07 ms range, alignment stays at
+  0.03 ms, and the uniform +100 ms control is indistinguishable from
+  baseline (§5). The remaining
+  one-process caveat now covers clock skew sources and multi-hop routing, not
+  latency. The 40 ms jitter "hint" turned out to understate the result: added
+  latency does not even displace delivery time, because the pipeline runs on
+  interval slack. Measuring it needed a receive-side injector, since one
+  process receives for every participant on shared threads (§5
+  instrumentation note).
   [#22](https://github.com/drawmeanelephant/ninjam/issues/22)
 - **Loss is all-or-nothing per message.** A real lossy link truncates streams
   mid-message. Here a dropped `INTERVAL_WRITE` loses a whole chunk, which is

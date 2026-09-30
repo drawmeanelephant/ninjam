@@ -1,0 +1,5 @@
+tag=rtt100 duration=200.0s markers=90 clock_rows=5904
+  client 0 ppm=+0 status_ok=0.02s first_audio=20.10s first_marker=20.06s emitted=16 decoded=30 dropped=0/98
+  client 1 ppm=+0 status_ok=0.02s first_audio=20.10s first_marker=20.06s emitted=16 decoded=30 dropped=0/98
+  client 2 ppm=+0 status_ok=0.02s first_audio=20.10s first_marker=20.06s emitted=16 decoded=30 dropped=0/98
+  logs: results/rtt100/rtt100_markers.csv, results/rtt100/rtt100_clock.csv, results/rtt100/rtt100_summary.txt, results/rtt100/rtt100_clients.csv

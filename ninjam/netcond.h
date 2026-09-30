@@ -81,6 +81,28 @@ namespace NJCond
   // into the calling thread's profile. No-op if they are unset.
   void init_from_env();
 
+  // The delay/jitter profile (audio_delay_ms / audio_jitter_ms) is applied
+  // where messages are SENT, on the sending thread. Symmetric per-link
+  // latency also needs the receiving end held, which that path cannot do: a
+  // process receives on behalf of every other participant, all on shared
+  // threads, so "hold what I receive for X ms" must be a property of the
+  // thread RUNNING the receiving connection. Net_Connection::Run reads this
+  // for every completed audio message it parks, so the value applies to
+  // whatever connection(s) that thread drives.
+  //
+  // This is per-THREAD, not per-connection, which is exactly why it works
+  // for the interval lab: every simulated client is pumped on its own thread
+  // with its own connection, so one client sets it and only that client sees
+  // it. It cannot give two connections on the SAME thread different holds,
+  // so the lab applies a link's full one-way delay from the client end
+  // rather than splitting it across a shared server thread (see
+  // --client-delay in tests/interval_lab.cpp).
+  double rx_delay_ms();
+
+  // set this thread's receive-side hold for audio messages, in ms. 0.0 (the
+  // default) disables it.
+  void set_rx_delay(double ms);
+
   // true if the message type carries interval audio
   bool is_audio_message(int type);
 

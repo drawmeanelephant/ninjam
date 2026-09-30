@@ -137,6 +137,20 @@ static bool port_accepts(int port)
   return ok;
 }
 
+// The conditioner counters are per-THREAD and cumulative, and the pump loop
+// below drives every simulated client from one thread, so a plain snapshot
+// would report the same grand total on every client row. Reset at the top of
+// each client's pump window and fold the window into that client instead, so
+// the columns are genuinely per client.
+static void add_cond(NJCond::Stats &dst, const NJCond::Stats &src)
+{
+  dst.audio_seen += src.audio_seen;
+  dst.audio_dropped += src.audio_dropped;
+  dst.audio_delayed += src.audio_delayed;
+  dst.audio_bytes += src.audio_bytes;
+  dst.delay_applied_ms += src.delay_applied_ms;
+}
+
 // The server runs in its own process, so its downlink conditioner comes
 // from the environment rather than from a thread-local profile.
 static lab_proc_t spawn_server(const LabConfig &cfg, int port, const char *logpath)
@@ -255,7 +269,7 @@ struct SimClient
       next_k(0.0), burst_rem(0), burst_pos(0), markers_emitted(0),
       markers_skipped(0), started(false), channel_made(false), t_start_s(0.0), t_connected_s(-1.0),
       t_status_ok_s(-1.0), t_first_remote_audio_s(-1.0), t_first_marker_s(-1.0),
-      first_marker_from(-1), markers_decoded(0), local_markers_decoded(0)
+      first_marker_from(-1), markers_decoded(0), local_markers_decoded(0), cond()
   {
     name="anon";
   }
@@ -353,6 +367,9 @@ int main(int argc, char **argv)
       "  --up-loss=PCT          drop this %% of client->server audio messages\n"
       "  --up-delay=MS --up-jitter=MS\n"
       "  --down-loss=PCT --down-delay=MS --down-jitter=MS   (applied in the server)\n"
+      "  --client-delay=a:b:c   added one-way latency per client, ms, applied\n"
+      "                         in BOTH directions (client->server and\n"
+      "                         server->client), i.e. real symmetric RTT\n"
       "  --late-join=SEC        start one extra client SEC seconds in\n");
     return 2;
   }
@@ -514,12 +531,29 @@ int main(int argc, char **argv)
       if (n > CHUNK_MAX) n=CHUNK_MAX;
       if (n < 1) continue;
 
-      // ---- uplink conditioner for this client only ----
+      // ---- conditioner for this client only ----
+      // c.idx can exceed the list for a late joiner (the list is sized to
+      // the initial client count); a client that joined late has no entry,
+      // which means no added latency.
+      //
+      // --client-delay is one-way latency applied in BOTH directions, so a
+      // client's link gets cdel on the way up (TX profile) and cdel on the
+      // way down (receive-side hold). The whole thing lives on the client
+      // thread rather than splitting across the server: the server's receive
+      // hold is a per-THREAD value (NJCond::rx_delay_ms) and the server
+      // pumps every connection on its one main thread, so a per-connection
+      // hold set from there would be last-wins for all of them. Each
+      // simulated client has its own thread and its own connection, so the
+      // client end can carry both halves exactly.
+      const double cdel = c.idx < (int)cfg.client_delay.size()
+        ? cfg.client_delay[c.idx] : 0.0;
+      NJCond::reset_stats();
       NJCond::Profile prof;
       prof.audio_loss_pct=cfg.up_loss;
-      prof.audio_delay_ms=cfg.up_delay;
+      prof.audio_delay_ms=cfg.up_delay + cdel;
       prof.audio_jitter_ms=cfg.up_jitter;
       NJCond::set_profile(prof);
+      NJCond::set_rx_delay(cdel);
 
       // ---- network ----
       for (int r=0; r < 32; r ++)
@@ -685,7 +719,7 @@ int main(int argc, char **argv)
       }
 
       c.processed+=n;
-      c.cond=NJCond::get_stats();
+      add_cond(c.cond,NJCond::get_stats());
     }
 
     // ---- synchronous clock-domain probe ----
@@ -737,6 +771,7 @@ int main(int argc, char **argv)
 
   const double t_total=now_s()-t_run0;
   NJCond::set_profile(NJCond::Profile());
+  NJCond::set_rx_delay(0.0);
 
   // ---- write logs --------------------------------------------------------
   const std::string mp=cfg.outdir+"/"+cfg.tag+"_markers.csv";
@@ -800,6 +835,7 @@ int main(int argc, char **argv)
     fprintf(fp,"down_loss_pct %g\n",cfg.down_loss);
     fprintf(fp,"down_delay_ms %g\n",cfg.down_delay);
     fprintf(fp,"down_jitter_ms %g\n",cfg.down_jitter);
+    fprintf(fp,"client_delay_ms %s\n",cfg.client_delay_list.c_str());
     fprintf(fp,"duration_s %.2f\n",t_total);
     fclose(fp);
   }
@@ -812,15 +848,21 @@ int main(int argc, char **argv)
   {
     fprintf(fp,"idx,name,ppm,is_late,status_ok_s,first_remote_audio_s,first_marker_s,"
                "first_marker_from,markers_emitted,markers_skipped,markers_decoded,"
-               "audio_msgs_seen,audio_msgs_dropped,audio_msgs_delayed\n");
+               "audio_msgs_seen,audio_msgs_dropped,audio_msgs_delayed,final_status\n");
     for (size_t si=0; si < live.size(); si ++)
     {
       SimClient &c=sc[live[si]];
-      fprintf(fp,"%d,%s,%g,%d,%.3f,%.3f,%.3f,%d,%ld,%ld,%ld,%lu,%lu,%lu\n",
+      // final_status is the NJClient status at teardown: 0 means the session
+      // was still healthy at the end of the run. A fault-injection profile
+      // that shows up here as a negative value has killed the session rather
+      // than degraded it, which is a different (and much louder) failure than
+      // anything the marker table can show.
+      fprintf(fp,"%d,%s,%g,%d,%.3f,%.3f,%.3f,%d,%ld,%ld,%ld,%lu,%lu,%lu,%d\n",
         c.idx,c.name.c_str(),c.ppm,(c.idx>=cfg.nclients)?1:0,
         c.t_status_ok_s,c.t_first_remote_audio_s,c.t_first_marker_s,c.first_marker_from,
         c.markers_emitted,c.markers_skipped,c.markers_decoded,
-        c.cond.audio_seen,c.cond.audio_dropped,c.cond.audio_delayed);
+        c.cond.audio_seen,c.cond.audio_dropped,c.cond.audio_delayed,
+        c.client.GetStatus());
     }
     fclose(fp);
   }
