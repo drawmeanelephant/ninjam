@@ -3,6 +3,8 @@ build/
 cmake-build-*/
 # the interval lab's default build directory (tools/run_interval_lab.sh)
 build-interval-lab/
+# a client-enabled configuration, for running the ui_snapshot goldens locally
+build-client/
 
 # runtime state
 imgui.ini

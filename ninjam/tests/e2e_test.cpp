@@ -10,6 +10,10 @@
       3. chat: alice's MSG is relayed to bob
       4. one interval round-trip: alice broadcasts a local channel, the
          server relays it, and bob decodes real audio energy from it
+      5. an unexpected disconnect is retried by the reconnect logic, and
+      6. a CORRUPTED byte stream is reported as corruption rather than as a
+         dead network (issue #29) -- the two share one status code, so the
+         error string is the only thing that separates them
 
     Everything runs in "virtual time": NJClient clocks advance per audio
     sample, so the test pumps AudioProc() as fast as it likes and only
@@ -47,6 +51,7 @@ typedef pid_t e2e_proc_t;
 #endif
 
 #include "ninjam/njclient.h"
+#include "ninjam/netcond.h"
 #include "ninjam/imguiclient/auto_reconnect.h"
 #include "WDL/jnetlib/util.h"
 
@@ -528,6 +533,11 @@ int main(int argc, char **argv)
       if (!dropped) std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     CHECK(dropped);
+    // issue #29, control half: a transport that went away must NOT claim the
+    // stream was corrupted. Both are status 1002, so the explanation is the
+    // thing to assert on, and it is the half that used to be empty.
+    CHECK(alice.client.GetErrorStr()[0] != 0);
+    CHECK(strstr(alice.client.GetErrorStr(),"corrupted") == NULL);
 
     srv=spawn_server(srvpath,cfgpath,port,logpath);
     CHECK(srv != E2E_BAD_PROC);
@@ -554,6 +564,81 @@ int main(int argc, char **argv)
       if (!recovered) std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     CHECK(recovered);
+
+    // phase 6: a CORRUPTED byte stream is reported as corruption (issue #29).
+    //
+    // The framing is a bare type plus 32 bit length with no resync marker, so
+    // removing 8 bytes from the middle of a message body leaves every later
+    // message misparsed and the session unrecoverable (results/desync). The
+    // socket stays up the whole time -- that is the point: the user must be
+    // able to tell this apart from a network that went away, and both arrive
+    // as the same status code.
+    //
+    // bob is the one that desynchronises, because he is the one receiving
+    // audio. Both of them were disconnected by the server kill above and only
+    // alice was reconnected, and alice's reconnect cleared her local channels,
+    // so he has to come back and she has to broadcast again first.
+    bob.client.Connect(host,"anonymous:bob","x");
+    bool bob_back=false;
+    deadline=std::chrono::steady_clock::now()+std::chrono::seconds(15);
+    while (!bob_back && std::chrono::steady_clock::now() < deadline)
+    {
+      pump(alice);
+      pump(bob);
+      bob_back=bob.client.GetStatus()==NJClient::NJC_STATUS_OK;
+      if (!bob_back) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    CHECK(bob_back);
+
+    alice.client.SetLocalChannelInfo(0,"e2e",true,0,true,64,true,true);
+    alice.client.NotifyServerOfChannelChange();
+    int alice_idx2=-1;
+    deadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);
+    while (alice_idx2 < 0 && std::chrono::steady_clock::now() < deadline)
+    {
+      pump(alice);
+      pump(bob);
+      for (int u = 0; u < bob.client.GetNumUsers(); u ++)
+      {
+        const char *nm=bob.client.GetUserState(u);
+        if (nm && !strncmp(nm,"alice",5)) alice_idx2=u;
+      }
+      if (alice_idx2 < 0) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    CHECK(alice_idx2 >= 0);
+    if (alice_idx2 >= 0)
+    {
+      const int ch=bob.client.EnumUserChannels(alice_idx2,0);
+      CHECK(ch >= 0);
+      if (ch >= 0)
+        bob.client.SetUserChannelState(alice_idx2,ch,true,true,false,0,false,0,false,false,false,false);
+    }
+
+    // drop 8 bytes from the front of the body of every inbound audio message.
+    // 100% rather than a few percent so the test does not have to wait for a
+    // rare roll: the first corrupted message desynchronises the rest.
+    NJCond::set_rx_trunc(0.0,0,100.0,8);
+    aphase=0.0;
+    bool corrupted=false, alice_survived=false;
+    deadline=std::chrono::steady_clock::now()+std::chrono::seconds(30);
+    while (!corrupted && std::chrono::steady_clock::now() < deadline)
+    {
+      feed_audio(alice,&aphase,440.0,0.5);
+      pump(alice);
+      pump(bob);
+      corrupted=bob.client.GetStatus()==NJClient::NJC_STATUS_DISCONNECTED;
+      if (!corrupted) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    NJCond::set_rx_trunc(0.0,0,0.0,0);
+    CHECK(corrupted);
+    const char *why=bob.client.GetErrorStr();
+    printf("bob disconnect reason: %s\n",why);
+    CHECK(why && why[0]);
+    CHECK(why && strstr(why,"corrupted") != NULL);
+    // alice never had its stream damaged, so it must still be connected: the
+    // disconnect is per-connection, not a verdict on the server
+    alice_survived=alice.client.GetStatus()==NJClient::NJC_STATUS_OK;
+    CHECK(alice_survived);
   }
 
   alice.client.Disconnect();

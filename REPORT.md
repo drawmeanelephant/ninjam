@@ -46,6 +46,7 @@ wall time is about 145 minutes, dominated by the eight 11-minute drift runs.
 | one truncated *upload* vs one truncated *download* | a download is private to the client that received it (19 of 23 intervals hit one client); an upload is forwarded by the server and hits **every other participant at the same instant** (11 of 12 intervals hit two clients, 9 of those on the same emitter) (§6) |
 | a byte dropped mid-message (8 B), downlink | **kills the session outright**: affected clients end at `NJC_STATUS_DISCONNECTED`, 0 markers, peers untouched (§6) |
 | a byte dropped mid-message (8 B), uplink | kills that one user; the server logs `code=-1` and serves the rest. At 3% all three users were gone within 70 s (§6) |
+| can the client tell corruption from a dead network? | **yes, by the error string** - the status code is `1002` either way, but `GetErrorStr()` now says the stream was corrupted rather than that the connection was lost (issue #29, §6) |
 
 ## 1. The delay is two intervals, not one
 
@@ -588,6 +589,43 @@ any transport error and sets no error string, so a stream that was silently
 mangled is indistinguishable to the user from a network that went away. There
 is no recovery path short of reconnecting, and no diagnostic that says why.
 
+**That diagnostic now exists (issue #29); the recovery does not.** The framing
+result above is unchanged - a desynchronised stream is still unrecoverable,
+because there is no resync marker to search for - but the client no longer
+reports a bare status. `Net_Connection` was already distinguishing these
+faults: only the *sign* of `GetStatus()` separated "the message stream went
+bad" from "the socket went away", and both reached `NJClient::Run` as the same
+nonzero value. The codes are now named (`ERR_FRAMING`, `ERR_SENDQ_FULL`,
+`ERR_TIMEOUT`) and readable with `GetStreamError()`, and `NJClient::Run`
+turns whichever one it was handed into a sentence.
+
+| what actually failed | `GetErrorStr()` now says |
+|----------------------|--------------------------|
+| byte stream no longer parses | the data stream from the server was corrupted and could not be parsed -- the connection itself is still up, so this is not a network dropout, and the session cannot be resumed |
+| socket went away | the connection to the server was lost |
+| server went quiet (keepalive) | the server stopped responding |
+| local send queue overran | the client fell too far behind to keep up with its own audio |
+
+An explanation already in place is never overwritten, so a server-side
+rejection still shows the server's own words rather than a client-side guess.
+
+Two front ends needed fixing to make the string reachable, and both fixes are
+part of the issue rather than incidental. The curses client labelled it
+`Server gave explanation:`, which is wrong for a reason the client produced
+itself; and the Dear ImGui client only showed `GetErrorStr()` for
+`CANTCONNECT` and `INVALIDAUTH` - never for the `DISCONNECTED` status a
+framing failure produces - so the new text would have been invisible in the
+default client. The legacy GUI and the Windows client already display it for
+any non-OK status.
+
+`ninjam_e2e` now covers both halves, because a test that only checks the
+corruption case would pass just as happily if every disconnect said
+"corrupted". The server-kill phase asserts the explanation does *not* mention
+corruption, and a new phase drops 8 bytes from the middle of every inbound
+audio message and asserts that the affected client reports corruption while the
+client with an untouched stream stays connected - the fault is per-connection,
+not a verdict on the server. The suite reports 34 checks, 0 failures.
+
 **Coverage.** `fuzz/` drives client-to-server bytes into the *server*
 (`fuzz/harness.cpp`, and every seed in `gen_corpus.py` is built from
 `MSG_CLIENT_UPLOAD_INTERVAL_*`). Nothing there exercises a client decoding a
@@ -773,6 +811,18 @@ Each of these has a tracking issue.
   a badly-clocked client can be a whole interval out before it has played a
   note, which is a sharper failure than slow drift.
   [#25](https://github.com/drawmeanelephant/ninjam/issues/25)
+- ~~**A corrupted byte stream is reported as a bare disconnect, so a framing
+  failure is indistinguishable from a dead network.** Found while reviewing the
+  #28 work and filed as its own issue afterwards.~~ **Resolved, for the
+  diagnosis only.** The status code still cannot say - `1002` covers a socket
+  that closed, a stream that stopped parsing, and a peer that fell silent - but
+  `GetErrorStr()` now does, and the failure codes behind it are named instead
+  of being negative magic numbers. Regression coverage asserts the corruption
+  case *and* the dead-socket case it must not be confused with, because a test
+  of only the first would pass if every disconnect claimed corruption (§6).
+  What is still not fixed is recovery: with no resync marker in the framing,
+  a desynchronised stream is unrecoverable and only a reconnect helps.
+  [#29](https://github.com/drawmeanelephant/ninjam/issues/29)
 - **A detector artefact that looks like signal.** `peak` is clamped to 1.0
   (`interval_probe.h`), and the value 1.0000 appears on exactly the post-slip
   rows across every slipping pair. It is the correlation saturating, not the
