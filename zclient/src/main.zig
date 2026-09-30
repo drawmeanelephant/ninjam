@@ -18,11 +18,10 @@ fn printUsage(io: std.Io) void {
         \\    --duration S       seconds to run (default 20)
         \\    --out-dir DIR      directory for decoded peer WAVs (default dump)
         \\    --transcript FILE  transcript log path (default <out-dir>/transcript.log)
-        \\    --live             play decoded peers + capture mic (Phase B)
-        \\    --chat TEXT        send a public MSG after joining
-        \\    --chat-delay S     seconds before the MSG (default 1.5)
         \\    --live             capture the local device and play the decoded
         \\                       peer mix through it (Phase B)
+        \\    --chat TEXT        send a public MSG after joining
+        \\    --chat-delay S     seconds before the MSG (default 1.5)
         \\    --live-period N    device period in frames (default 480 = 10 ms)
         \\    --audio-device ID  miniaudio device id (default: system default)
         \\    --play-wav FILE    dump the post-mix signal handed to the device
@@ -129,8 +128,6 @@ fn cmdJoin(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, argv: [
             const secs = std.fmt.parseFloat(f64, next orelse fail(io, "--chat-delay needs a value", .{})) catch fail(io, "bad --chat-delay", .{});
             opts.chat_delay_ms = @intFromFloat(secs * 1000.0);
             i += 1;
-        } else if (std.mem.eql(u8, a, "--live")) {
-            opts.live = true;
         } else if (std.mem.eql(u8, a, "--live-period")) {
             opts.live_period = parseInto(u32, next orelse fail(io, "--live-period needs a value", .{})) catch fail(io, "bad --live-period", .{});
         } else if (std.mem.eql(u8, a, "--audio-device")) {
