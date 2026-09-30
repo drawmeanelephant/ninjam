@@ -45,12 +45,16 @@ if [ "$QUICK" = "1" ]; then
   DRIFT_SECS=120
   LOSS_SECS=40
   JOIN_SECS=120
+  RESID_SECS=60
 else
   # the report's headline runs are 11 minutes, comfortably over the
   # "10+ minute" requirement
   DRIFT_SECS=660
   LOSS_SECS=150
   JOIN_SECS=300
+  # residual attribution only needs enough markers to take a median, not a
+  # long session: the quantity is a constant, not an accumulation
+  RESID_SECS=200
 fi
 
 # --- scenarios -------------------------------------------------------------
@@ -81,6 +85,18 @@ fi
 # Their mark period has to grow with the interval: the lab refuses a mark
 # period below 2.5x the interval, because two consecutive markers closer
 # than that cannot be told apart from a single detection.
+#
+# Residual attribution (issue #21). The emission-to-playback delay is two
+# intervals plus a constant ~20 ms that does not move when the interval
+# length changes 4x. Two candidate causes:
+#   (a) the DETECTOR reports the centre of the correlation window while the
+#       marker is emitted at its START, biasing the measurement by half the
+#       burst: (mark_len-1)/2 samples = 19.99 ms at the default 1920;
+#   (b) real codec or loopback latency, which would be independent of
+#       mark_len.
+# Varying mark_len separates them: under (a) the residual scales with it,
+# under (b) it does not. mark960 and mark3840 bracket the default, and
+# mark3840iv2s combines the long burst with a short interval.
 scenarios() {
   cat <<EOF
 baseline|$DRIFT_SECS||3
@@ -98,6 +114,9 @@ jitter|$LOSS_SECS||3|--up-jitter=40 --down-jitter=40
 latejoin|$JOIN_SECS||3|--late-join=120
 interval2s|$LOSS_SECS||3|--bpi=4 --mark-period=12
 interval8s|$LOSS_SECS||3|--bpi=16 --mark-period=20
+mark960|$RESID_SECS||3|--mark-len=960
+mark3840|$RESID_SECS||3|--mark-len=3840
+mark3840iv2s|$RESID_SECS||3|--mark-len=3840 --bpi=4 --mark-period=12
 EOF
 }
 

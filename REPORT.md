@@ -17,9 +17,10 @@ wall time is about 64 minutes, almost all of it the 10-11 minute drift runs.
 
 | claim | measured |
 |-------|----------|
-| emission-to-playback delay at 120 BPM / 8 beats-per-interval | **8020.04 ms** (median of 6 pairs in `baseline`; 8020.02-8020.13 across all eight 4 s scenarios) |
-| that delay expressed in intervals | **2.005** |
-| is it a fixed time or a fixed number of intervals? | **intervals.** 2 s interval -> 4020.01 ms, 4 s -> 8020.04 ms, 8 s -> 16020.04 ms |
+| emission-to-playback delay at 120 BPM / 8 beats-per-interval | **8000.05 ms** (median of 6 pairs in `baseline`; 8000.03-8000.14 across all 4 s scenarios) |
+| that delay expressed in intervals | **2.0000** |
+| is it a fixed time or a fixed number of intervals? | **intervals.** 2 s interval -> 4000.02 ms, 4 s -> 8000.05 ms, 8 s -> 16000.05 ms |
+| the ~20 ms residual this report used to claim | **a detector artefact**, not latency: it is half the marker burst, `(mark_len-1)/2` samples. Halving/doubling `--mark-len` halves/doubles it exactly (§1.1) |
 | max pairwise interval-alignment error, 11 min, no injected fault | **0.03 ms** |
 | max pairwise alignment error, 11 min, +/-50 ppm clock drift | **0.18 ms** (predicted divergence over the run: 33 ms) |
 | max pairwise alignment error, 11 min, +/-200 ppm clock drift | **0.18 ms** (predicted divergence over the run: 132 ms) |
@@ -44,14 +45,15 @@ It is the constant the interval model contributes.
 
 | interval | tempo | median delay | delay / interval |
 |----------|-------|--------------|------------------|
-| 2000 ms | 120 BPM, 4 beats/interval | 4020.01 ms | 2.010 |
-| 4000 ms | 120 BPM, 8 beats/interval | 8020.04 ms | 2.005 |
-| 8000 ms | 120 BPM, 16 beats/interval | 16020.04 ms | 2.003 |
+| 2000 ms | 120 BPM, 4 beats/interval | 4000.02 ms | **2.0000** |
+| 4000 ms | 120 BPM, 8 beats/interval | 8000.05 ms | **2.0000** |
+| 8000 ms | 120 BPM, 16 beats/interval | 16000.05 ms | **2.0000** |
 
 The delay scales with the interval, so it is a fixed **count** of intervals,
-not a fixed time. The residual over `2 x interval` is 20.01, 20.04 and
-20.04 ms across the three tempos - a constant, and consistent with codec and
-loopback latency.
+not a fixed time. Once the measurement artefact described below is removed the
+residual over `2 x interval` is **0.05 ms, 0.05 ms and 0.05 ms** - that is,
+the delay is exactly two intervals, and what is left is under a tenth of a
+millisecond.
 
 **Where the two intervals come from.** The server cannot forward an upload
 until the interval it belongs to has closed, because only then is the audio
@@ -60,6 +62,45 @@ whole. The client then holds the received audio in a two-deep queue:
 `ds`, shifts `next_ds[1]` to `next_ds[0]`, and clears `next_ds[1]`, while
 `MESSAGE_SERVER_DOWNLOAD_INTERVAL_BEGIN` fills `next_ds[0]`. One interval is
 spent at the server, one in that client pipeline.
+
+### 1.1 The 20 ms residual was the measuring instrument, not NINJAM
+
+Earlier drafts of this report put the delay at 8020.04 ms and called the
+20 ms over two intervals "consistent with codec and loopback latency". That
+attribution was wrong, and it was an artefact of the harness.
+
+The detector reports the **centre** of the correlation window
+(`interval_probe.h`, `d.center_sample`), but a marker is emitted at the
+**start** of its burst. Comparing a centre against a start injects exactly
+half the burst length, `(mark_len-1)/2` samples, into every measurement. At the
+default `mark_len=1920` that is **19.99 ms** - the entire residual.
+
+Varying `--mark-len` separates this from real latency, because the two
+predict different things: a detector centring artefact scales with the burst,
+codec latency does not. Three scenarios, 200 s each:
+
+| scenario | interval | mark_len | measured residual | half-burst | difference |
+|----------|----------|----------|-------------------|------------|------------|
+| mark960 | 4000 ms | 960 | **10.06 ms** | 9.99 ms | +0.07 |
+| baseline | 4000 ms | 1920 | **20.05 ms** | 19.99 ms | +0.06 |
+| mark3840 | 4000 ms | 3840 | **40.06 ms** | 39.99 ms | +0.07 |
+| mark3840iv2s | 2000 ms | 3840 | **40.06 ms** | 39.99 ms | +0.07 |
+
+The residual doubles when the burst doubles and halves when it halves, at both
+interval lengths. A least-squares fit of residual against half-burst gives a
+slope of **1.0000** times the sample period and a constant term of 0.065 ms
+(3.1 samples), which does not scale with `mark_len`. Real codec latency would
+sit flat at ~20 ms across all three rows and cannot produce a 4x swing.
+
+After removing the half-burst, **every scenario in the study reads exactly
+2.0000 intervals** - including the three marker lengths above, which needed
+corrections of 10, 20 and 40 ms respectively to get there. That is the check
+that would have caught this: an artefact that scales with the instrument
+cannot also vanish when you account for the instrument.
+
+The harness now writes `err_ms` centre-to-centre and records `err_centred 1`
+so a reader does not subtract the bias twice; the analyzer removes it from logs
+written before the fix. Both paths agree to 0.01 ms on `baseline`.
 
 ## 2. Clock drift is absorbed, then breaks in whole-interval steps
 
@@ -228,7 +269,7 @@ intact. The session itself never desynchronised - the clock-domain probe
 |--------|-------|
 | messages dropped | 0 |
 | markers decoded | 91.7% (66 of 72) |
-| spread of arrival error across detected markers | 8020.009 to 8020.146 ms, i.e. **0.14 ms** |
+| spread of arrival error across detected markers | 8000.009 to 8000.146 ms, i.e. **0.14 ms** |
 | interval phase error, no audio involved | 0.00 ms median, 0.00 ms max |
 | alignment error | 0.03 ms |
 
@@ -251,17 +292,17 @@ A fourth client connects 120 s into a 300 s run.
 constant as everything else. The joiner does not have to catch up to a
 running timeline; it just waits out the pipeline. Once in, its phase sits
 **-0.02 ms** from the rest of the session and its delay to the existing
-clients is 8020.03-8020.06 ms, indistinguishable from theirs to each other.
+clients is 8000.03-8000.06 ms, indistinguishable from theirs to each other.
 
 ## 6. Claims the data contradicts
 
 **a. "Every client plays along to the previous interval" is off by one
 interval end-to-end.** The pitch describes the client-side half. Measured
-emission-to-playback is 2 intervals plus 20 ms - 8020 ms at the default
-tempo - because the server must also wait for the interval to close before it
-can forward it. At the default 120 BPM / 8 BPI that is 8.02 seconds of
-latency, not 4. The number is a fixed count of intervals, so it scales with
-tempo: 4.02 s at 2 s intervals, 16.02 s at 8 s intervals.
+emission-to-playback is 2 intervals - 8000 ms at the default tempo - because
+the server must also wait for the interval to close before it can forward it.
+At the default 120 BPM / 8 BPI that is 8.00 seconds of latency, not 4. The
+number is a fixed count of intervals, so it scales with tempo: 4.00 s at 2 s
+intervals, 16.00 s at 8 s intervals.
 
 **b. The pitch implies drift is the interesting failure mode. It isn't, until
 it suddenly is.** There is no timesync message anywhere in the protocol and
@@ -311,7 +352,7 @@ cross-frequency rejection (0.0012 cross vs 1.0 self).
 
 **Two scenarios have thin marker counts.** `interval8s` has a 20 s mark period
 (the lab requires >= 2.5x the interval), so its 150 s run yields only 6 markers
-per pair. Its delay ratio of 2.003 is the load-bearing number there, not the
+per pair. Its delay ratio of 2.0000 is the load-bearing number there, not the
 alignment figure. `drift8000` decodes 87.7% rather than 100% because a client
 that has slipped an interval puts some markers across a boundary where the
 emitter's grid no longer expects them.
@@ -334,11 +375,14 @@ Each of these has a tracking issue.
   design (durations scaling inversely with ppm) was the wrong way round and
   would have measured the same point repeatedly.
   [#20](https://github.com/drawmeanelephant/ninjam/issues/20)
-- **The 20 ms residual is attributed to codec and loopback latency but not
-  decomposed.** It is suspiciously stable across a 4x change in interval
-  length, which suggests a fixed buffer somewhere, but nothing here localises
-  it. If it turns out to be harness-side, the true interval delay is exactly
-  two intervals. [#21](https://github.com/drawmeanelephant/ninjam/issues/21)
+- ~~**The 20 ms residual is attributed to codec and loopback latency but not
+  decomposed.**~~ **Resolved, and the attribution was wrong.** It is the
+  detector comparing a correlation *centre* against a marker emitted at its
+  *start*, injecting half the marker burst — `(mark_len-1)/2` samples. Scaling
+  `--mark-len` scales the residual exactly, which codec latency cannot do. The
+  true interval delay is exactly two intervals with a 0.05 ms residual, and
+  every scenario now reads 2.0000. See §1.1. Fixed in the harness.
+  [#21](https://github.com/drawmeanelephant/ninjam/issues/21)
 - **All clients are in one process on one machine.** Inter-client skew here is
   protocol behaviour, not network behaviour, and says nothing about a real
   link with real RTT. Real deployments add RTT the interval model has to
