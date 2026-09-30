@@ -18,6 +18,7 @@ fn printUsage(io: std.Io) void {
         \\    --duration S       seconds to run (default 20)
         \\    --out-dir DIR      directory for decoded peer WAVs (default dump)
         \\    --transcript FILE  transcript log path (default <out-dir>/transcript.log)
+        \\    --live             play decoded peers + capture mic (Phase B)
         \\    --chat TEXT        send a public MSG after joining
         \\    --chat-delay S     seconds before the MSG (default 1.5)
         \\    --live             capture the local device and play the decoded
@@ -119,6 +120,8 @@ fn cmdJoin(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, argv: [
         } else if (std.mem.eql(u8, a, "--transcript")) {
             opts.transcript_path = next orelse fail(io, "--transcript needs a value", .{});
             i += 1;
+        } else if (std.mem.eql(u8, a, "--live")) {
+            opts.live = true;
         } else if (std.mem.eql(u8, a, "--chat")) {
             opts.chat = next orelse fail(io, "--chat needs a value", .{});
             i += 1;

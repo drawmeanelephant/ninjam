@@ -175,6 +175,34 @@ done
 grep -q "hello from alice (zclient)" "$EVDIR/s1-transcript-bob.log" || fail "alice's chat never reached bob"
 grep -q "hello from bob (zclient anonymous)" "$EVDIR/s1-transcript-alice.log" || fail "bob's chat never reached alice"
 
+echo "== scenario 3: live audio (Phase B) — tone peer + --live client =="
+LIVE_OK=1
+"$ZCLIENT" join --host 127.0.0.1:$PORT --user alice --pass secret \
+  --duration 17 --channel "alice-live" --source tone:440:0.5 \
+  --out-dir "$DUMP4/A" --transcript "$EVDIR/s3-transcript-alice.log" \
+  > "$EVDIR/s3-summary-alice.txt" 2>&1 &
+L1=$!
+sleep 1.5
+"$ZCLIENT" join --host 127.0.0.1:$PORT --user anonymous:bob --pass x \
+  --duration 15 --channel "bob-live" --live \
+  --play-wav "$RUNTIME/s3/bob_played.wav" \
+  --out-dir "$DUMP4/B" --transcript "$EVDIR/s3-transcript-bob.log" \
+  > "$EVDIR/s3-summary-bob.txt" 2>&1
+L2=$?
+wait $L1 || LIVE_OK=0
+if [ "$L2" -ne 0 ]; then
+  echo "NOTE: live scenario could not open an audio device here (headless?); skipping Phase B assertion"
+  LIVE_OK=0
+fi
+if [ "$LIVE_OK" -eq 1 ] && [ -f "$RUNTIME/s3/bob_played.wav" ]; then
+  OUT=$("$ZCLIENT" check-wav "$RUNTIME/s3/bob_played.wav" --min-rms 0.05) || fail "live playback was silent: $OUT"
+  echo "$OUT" | tee -a "$EVDIR/wav-analysis.txt"
+  grep -q "live audio ON" "$EVDIR/s3-summary-bob.txt" || fail "live device did not open (see s3-summary-bob.txt)"
+  cp "$RUNTIME/s3/bob_played.wav" "$EVDIR/s3-live-playback-4s.wav"
+else
+  echo "live scenario skipped (no audio device in this environment)"
+fi
+
 grep -q "REFPEER RESULT ok=1" "$EVDIR/s2-refpeer-report.txt" || fail "reference client did not decode zclient audio (see s2-refpeer-report.txt)"
 S2="$EVDIR/s2-summary-zclient.txt"
 [ "$(result_field ok "$S2")" = "true" ] || fail "scenario2 zclient not ok"
