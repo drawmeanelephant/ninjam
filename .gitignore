@@ -1,6 +1,8 @@
 # build output
 build/
 cmake-build-*/
+# the interval lab's default build directory (tools/run_interval_lab.sh)
+build-interval-lab/
 
 # runtime state
 imgui.ini

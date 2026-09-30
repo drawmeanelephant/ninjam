@@ -57,6 +57,11 @@ else
   RESID_SECS=200
 fi
 
+# TRUNC_SECS is the same length: what a truncated write costs is a fraction of
+# one interval, but counting the damage needs enough events to have a
+# distribution, and events arrive at about one per message per client.
+TRUNC_SECS="$RESID_SECS"
+
 # --- scenarios -------------------------------------------------------------
 # name | duration | ppm list | clients | extra options
 #
@@ -137,6 +142,37 @@ mark3840|$RESID_SECS||3|--mark-len=3840
 mark3840iv2s|$RESID_SECS||3|--mark-len=3840 --bpi=4 --mark-period=12
 rtt-spread|$RESID_SECS||3|--client-delay=0:50:200
 rtt100|$RESID_SECS||3|--client-delay=100:100:100
+# Truncation (issue #23). A whole audio message going missing is only one way
+# a write can fail to arrive intact; the other is that it arrives SHORT, with
+# the tail of its payload gone, which the protocol accepts silently because a
+# message's payload length is whatever the message says it is. These run at a
+# 2 s interval with a 6.5 s mark period, so 6500 mod 2000 = 500 puts markers at
+# four distinct offsets inside an interval and the loss can be attributed to
+# the interval it happened in rather than to a whole run.
+#
+# --steady puts a quiet 250 Hz tone on every channel, so a remote channel's
+# decoded level is a continuous measure of whether its audio is flowing: a
+# truncated stream shows up as a measured gap with a start and an end, not
+# only as a marker that failed to arrive. truncbase is the control and differs
+# from every other row here only in tempo, mark period and that tone.
+#
+# truncdown truncates the tail of messages a client RECEIVES, so the damage
+# should be confined to that one client. truncup truncates on the server's
+# receive thread instead, so one damaged upload is forwarded to everyone else
+# and the loss should show up on two clients at once. truncloss is the
+# comparison the issue actually asks for: the same number of messages lost
+# whole, which should cost a fraction of an interval each rather than the
+# rest of one.
+#
+# desync is the case the framing cannot survive at all: 8 bytes vanish from
+# the middle of a message body, so every length after that point is read from
+# the wrong offset. desyncup does the same to the uplink.
+truncbase|$TRUNC_SECS||3|--bpi=4 --mark-period=6.5 --steady=0.05
+truncdown|$TRUNC_SECS||3|--bpi=4 --mark-period=6.5 --steady=0.05 --trunc-pct=5 --trunc-bytes=2000
+truncup|$TRUNC_SECS||3|--bpi=4 --mark-period=6.5 --steady=0.05 --srv-trunc-pct=5 --srv-trunc-bytes=2000
+truncloss|$TRUNC_SECS||3|--bpi=4 --mark-period=6.5 --steady=0.05 --down-loss=5
+desync|$TRUNC_SECS||3|--bpi=4 --mark-period=6.5 --steady=0.05 --desync-pct=3 --desync-bytes=8
+desyncup|$TRUNC_SECS||3|--bpi=4 --mark-period=6.5 --steady=0.05 --srv-desync-pct=3 --srv-desync-bytes=8
 EOF
 }
 

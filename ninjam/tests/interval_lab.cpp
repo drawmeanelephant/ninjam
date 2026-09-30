@@ -148,6 +148,11 @@ static void add_cond(NJCond::Stats &dst, const NJCond::Stats &src)
   dst.audio_dropped += src.audio_dropped;
   dst.audio_delayed += src.audio_delayed;
   dst.audio_bytes += src.audio_bytes;
+  dst.audio_truncated += src.audio_truncated;
+  dst.trunc_bytes += src.trunc_bytes;
+  dst.trunc_msg_bytes += src.trunc_msg_bytes;
+  dst.rx_dropped += src.rx_dropped;
+  dst.drop_bytes += src.drop_bytes;
   dst.delay_applied_ms += src.delay_applied_ms;
 }
 
@@ -179,6 +184,19 @@ static lab_proc_t spawn_server(const LabConfig &cfg, int port, const char *logpa
     setenv("NJCOND_AUDIO_LOSS_PCT",lv,1);
     setenv("NJCOND_AUDIO_DELAY_MS",ld,1);
     setenv("NJCOND_AUDIO_JITTER_MS",lj,1);
+    {
+      // Truncation is injected on the RECEIVE side, so these land on the
+      // server's uplink (client -> server) rather than on its downlink.
+      char tp[32],tb[32],dp[32],db[32];
+      snprintf(tp,sizeof(tp),"%g",cfg.srv_trunc_pct);
+      snprintf(tb,sizeof(tb),"%d",cfg.srv_trunc_bytes);
+      snprintf(dp,sizeof(dp),"%g",cfg.srv_drop_pct);
+      snprintf(db,sizeof(db),"%d",cfg.srv_drop_bytes);
+      setenv("NJCOND_AUDIO_TRUNC_PCT",tp,1);
+      setenv("NJCOND_AUDIO_TRUNC_BYTES",tb,1);
+      setenv("NJCOND_RX_DROP_PCT",dp,1);
+      setenv("NJCOND_RX_DROP_BYTES",db,1);
+    }
     execl(cfg.srvpath.c_str(),cfg.srvpath.c_str(),
           (cfg.outdir+"/server.cfg").c_str(),"-port",portstr,"-logfile",logpath,(char *)NULL);
     _exit(127);
@@ -242,6 +260,7 @@ struct SimClient
   // marker emission
   std::vector<float> mark;    // this client's windowed tone burst
   int    mark_freq;
+  double steady_phase;   // running phase of the steady tone, if enabled
   double next_k;           // session position, in seconds, of the next marker
   int    burst_rem;        // samples of a partly-written burst still owed
   int    burst_pos;
@@ -265,7 +284,7 @@ struct SimClient
   NJCond::Stats cond;
 
   SimClient()
-    : idx(0), ppm(0.0), mark_freq(0), budget(0.0), t_last(0.0), processed(0), t0(0), audio_started(false),
+    : idx(0), ppm(0.0), mark_freq(0), steady_phase(0.0), budget(0.0), t_last(0.0), processed(0), t0(0), audio_started(false),
       next_k(0.0), burst_rem(0), burst_pos(0), markers_emitted(0),
       markers_skipped(0), started(false), channel_made(false), t_start_s(0.0), t_connected_s(-1.0),
       t_status_ok_s(-1.0), t_first_remote_audio_s(-1.0), t_first_marker_s(-1.0),
@@ -316,6 +335,29 @@ struct ClockRow
   int    loop;
   int    nusers;
   float  remote_peak;   // loudest decoded remote channel, for join timing
+  // Per-user decoded peak, sampled at the same 10 Hz. The max above cannot
+  // show that ONE remote channel went silent while the others carried on,
+  // which is exactly what a truncated write looks like, so the first few
+  // channels are logged individually. Up to 4; a run with more users than
+  // that only logs the loudest overall.
+  float  upk[4];
+};
+
+// One pump window in which a client received a truncated (or byte-dropped)
+// audio message. Recorded rather than merely counted, because WHICH interval
+// the truncation landed in is the whole question: the audio in flight now is
+// heard two intervals later, so the affected interval is the one containing
+// this client's current playback position plus two.
+struct TruncRow
+{
+  double t;
+  int    listener;
+  double spos_ms;      // this client's playback head when it happened
+  int    n_msgs;       // messages truncated in this window
+  int    cut_bytes;    // payload bytes removed
+  int    msg_bytes;    // total size of the messages that were cut
+  int    n_dropped;    // messages whose body lost bytes off the wire
+  int    drop_bytes;
 };
 
 // ---------------------------------------------------------------------------
@@ -366,11 +408,25 @@ int main(int argc, char **argv)
       "  --ppm=a:b:c            per-client clock offset in ppm\n"
       "  --up-loss=PCT          drop this %% of client->server audio messages\n"
       "  --up-delay=MS --up-jitter=MS\n"
-      "  --down-loss=PCT --down-delay=MS --down-jitter=MS   (applied in the server)\n"
-      "  --client-delay=a:b:c   added one-way latency per client, ms, applied\n"
-      "                         in BOTH directions (client->server and\n"
-      "                         server->client), i.e. real symmetric RTT\n"
-      "  --late-join=SEC        start one extra client SEC seconds in\n");
+      "  --down-loss=PCT --down-delay=MS --down-jitter=MS   (applied in the server)\n"           "  --client-delay=a:b:c   added one-way latency per client, ms, applied\n"
+           "                         in BOTH directions (client->server and\n"
+           "                         server->client), i.e. real symmetric RTT\n"
+           "  --trunc-pct=PCT        shorten this %% of the audio messages each client\n"
+           "                         RECEIVES, by dropping --trunc-bytes from the\n"
+           "                         tail of the audio payload (server->client)\n"
+           "  --trunc-bytes=N\n"
+           "  --desync-pct=PCT       drop --desync-bytes raw bytes off the front of\n"
+           "                         this %% of received audio message bodies, which\n"
+           "                         misaligns the length-prefixed framing\n"
+           "  --desync-bytes=N\n"
+           "  --srv-trunc-pct=PCT    the same tail truncation, injected on the\n"
+           "  --srv-trunc-bytes=N    server's receive thread, so it hits the\n"
+           "  --srv-desync-pct=PCT   uplink (client->server) of whichever\n"
+           "  --srv-desync-bytes=N   connection the roll lands on\n"
+           "  --steady=AMP          constant tone on every channel, 0..1, default 0.\n"
+           "                         Makes each channel's decoded level a continuous\n"
+           "                         audio-presence measure (250 Hz, off by default)\n"
+           "  --late-join=SEC        start one extra client SEC seconds in\n");
     return 2;
   }
 
@@ -489,6 +545,7 @@ int main(int argc, char **argv)
 
   std::vector<MarkerRow> markers;
   std::vector<ClockRow> clocks;
+  std::vector<TruncRow> truncs;
   std::vector<Detection> dets;
   std::vector<float> mono;
 
@@ -554,11 +611,34 @@ int main(int argc, char **argv)
       prof.audio_jitter_ms=cfg.up_jitter;
       NJCond::set_profile(prof);
       NJCond::set_rx_delay(cdel);
+      // The truncation knobs are receive-side only, so this client's own
+      // state is what governs the messages IT receives: the downlink.
+      NJCond::set_rx_trunc(cfg.down_trunc_pct,cfg.down_trunc_bytes,
+                           cfg.down_drop_pct,cfg.down_drop_bytes);
 
       // ---- network ----
       for (int r=0; r < 32; r ++)
       {
         if (c.client.Run()) break;
+      }
+
+      // did anything get damaged on the way in during this window?
+      {
+        const NJCond::Stats &w=NJCond::get_stats();
+        if (w.audio_truncated || w.rx_dropped)
+        {
+          TruncRow r;
+          r.t=t-t_run0;
+          r.listener=c.idx;
+          r.spos_ms=c.audio_started
+            ? (double)(c.processed-c.t0)*1000.0/LAB_SRATE : 0.0;
+          r.n_msgs=(int)w.audio_truncated;
+          r.cut_bytes=(int)w.trunc_bytes;
+          r.msg_bytes=(int)w.trunc_msg_bytes;
+          r.n_dropped=(int)w.rx_dropped;
+          r.drop_bytes=(int)w.drop_bytes;
+          truncs.push_back(r);
+        }
       }
 
       const int status=c.client.GetStatus();
@@ -592,6 +672,23 @@ int main(int argc, char **argv)
       // ---- build the input block, inserting this client's marker bursts ----
       memset(g_in[0],0,sizeof(float)*n);
       memset(g_in[1],0,sizeof(float)*n);
+
+      // A steady tone underneath, when asked for: it makes each channel's
+      // decoded level a continuous indicator of whether that channel's audio
+      // is flowing at all, so a truncated stream shows up as a measured gap
+      // rather than only as a marker that failed to arrive. The marker bursts
+      // below are written on top at ten times the amplitude.
+      if (cfg.steady > 0.0)
+      {
+        const double w=2.0*M_PI*LAB_STEADY_FREQ/(double)LAB_SRATE;
+        for (int q=0; q < n; q ++)
+        {
+          const float v=(float)(cfg.steady*sin(c.steady_phase));
+          g_in[0][q]=g_in[1][q]=v;
+          c.steady_phase+=w;
+        }
+        if (c.steady_phase > 2.0*M_PI) c.steady_phase-=2.0*M_PI;
+      }
 
       const long long sp0=c.processed;
       int i=0;
@@ -742,9 +839,11 @@ int main(int argc, char **argv)
         // loudest decoded remote channel: the first time this goes non-zero
         // is when remote audio actually started coming out of the mixer
         float peak=0.0f;
+        float upk[4]={0.0f,0.0f,0.0f,0.0f};
         for (int u=0; u < c.client.GetNumUsers(); u ++)
         {
           float p=c.client.GetUserChannelPeak(u,0);
+          if (u < 4) upk[u]=p;
           if (p>peak) peak=p;
         }
         if (peak > 0.001f && c.t_first_remote_audio_s < 0.0)
@@ -762,6 +861,7 @@ int main(int argc, char **argv)
         r.loop=c.client.GetLoopCount();
         r.nusers=c.client.GetNumUsers();
         r.remote_peak=peak;
+        for (int u=0; u < 4; u ++) r.upk[u]=upk[u];
         clocks.push_back(r);
       }
     }
@@ -772,6 +872,7 @@ int main(int argc, char **argv)
   const double t_total=now_s()-t_run0;
   NJCond::set_profile(NJCond::Profile());
   NJCond::set_rx_delay(0.0);
+  NJCond::set_rx_trunc(0.0,0,0.0,0);
 
   // ---- write logs --------------------------------------------------------
   const std::string mp=cfg.outdir+"/"+cfg.tag+"_markers.csv";
@@ -793,12 +894,28 @@ int main(int argc, char **argv)
   fp=fopen(cp.c_str(),"w");
   if (fp)
   {
-    fprintf(fp,"t_s,idx,spos_ms,interval_pos,interval_len,interval_phase_ms,bpm,bpi,loop,nusers,remote_peak\n");
+    fprintf(fp,"t_s,idx,spos_ms,interval_pos,interval_len,interval_phase_ms,bpm,bpi,loop,nusers,remote_peak,upk0,upk1,upk2,upk3\n");
     for (size_t x=0; x < clocks.size(); x ++)
     {
       const ClockRow &r=clocks[x];
-      fprintf(fp,"%.3f,%d,%.3f,%d,%d,%.3f,%.1f,%d,%d,%d,%.5f\n",
-        r.t,r.idx,r.spos_ms,r.ipos,r.ilen,r.phase_ms,r.bpm,r.bpi,r.loop,r.nusers,r.remote_peak);
+      fprintf(fp,"%.3f,%d,%.3f,%d,%d,%.3f,%.1f,%d,%d,%d,%.5f,%.5f,%.5f,%.5f,%.5f\n",
+        r.t,r.idx,r.spos_ms,r.ipos,r.ilen,r.phase_ms,r.bpm,r.bpi,r.loop,r.nusers,r.remote_peak,
+        r.upk[0],r.upk[1],r.upk[2],r.upk[3]);
+    }
+    fclose(fp);
+  }
+
+  const std::string tp2=cfg.outdir+"/"+cfg.tag+"_trunc.csv";
+  fp=fopen(tp2.c_str(),"w");
+  if (fp)
+  {
+    fprintf(fp,"t_s,listener,spos_ms,n_msgs,cut_bytes,msg_bytes,n_dropped,drop_bytes\n");
+    for (size_t x=0; x < truncs.size(); x ++)
+    {
+      const TruncRow &r=truncs[x];
+      fprintf(fp,"%.3f,%d,%.3f,%d,%d,%d,%d,%d\n",
+        r.t,r.listener,r.spos_ms,r.n_msgs,r.cut_bytes,r.msg_bytes,
+        r.n_dropped,r.drop_bytes);
     }
     fclose(fp);
   }
@@ -828,6 +945,7 @@ int main(int argc, char **argv)
     fprintf(fp,"decim %d\n",cfg.mark_decim);
     fprintf(fp,"threshold %.3f\n",cfg.threshold);
     fprintf(fp,"amplitude %.3f\n",cfg.amplitude);
+    fprintf(fp,"steady %.4f\n",cfg.steady);
     fprintf(fp,"bitrate %d\n",cfg.bitrate);
     fprintf(fp,"up_loss_pct %g\n",cfg.up_loss);
     fprintf(fp,"up_delay_ms %g\n",cfg.up_delay);
@@ -836,6 +954,14 @@ int main(int argc, char **argv)
     fprintf(fp,"down_delay_ms %g\n",cfg.down_delay);
     fprintf(fp,"down_jitter_ms %g\n",cfg.down_jitter);
     fprintf(fp,"client_delay_ms %s\n",cfg.client_delay_list.c_str());
+    fprintf(fp,"down_trunc_pct %g\n",cfg.down_trunc_pct);
+    fprintf(fp,"down_trunc_bytes %d\n",cfg.down_trunc_bytes);
+    fprintf(fp,"down_drop_pct %g\n",cfg.down_drop_pct);
+    fprintf(fp,"down_drop_bytes %d\n",cfg.down_drop_bytes);
+    fprintf(fp,"srv_trunc_pct %g\n",cfg.srv_trunc_pct);
+    fprintf(fp,"srv_trunc_bytes %d\n",cfg.srv_trunc_bytes);
+    fprintf(fp,"srv_drop_pct %g\n",cfg.srv_drop_pct);
+    fprintf(fp,"srv_drop_bytes %d\n",cfg.srv_drop_bytes);
     fprintf(fp,"duration_s %.2f\n",t_total);
     fclose(fp);
   }
@@ -848,7 +974,8 @@ int main(int argc, char **argv)
   {
     fprintf(fp,"idx,name,ppm,is_late,status_ok_s,first_remote_audio_s,first_marker_s,"
                "first_marker_from,markers_emitted,markers_skipped,markers_decoded,"
-               "audio_msgs_seen,audio_msgs_dropped,audio_msgs_delayed,final_status\n");
+               "audio_msgs_seen,audio_msgs_dropped,audio_msgs_delayed,"
+               "rx_msgs_truncated,trunc_bytes,rx_msgs_dropped,drop_bytes,final_status\n");
     for (size_t si=0; si < live.size(); si ++)
     {
       SimClient &c=sc[live[si]];
@@ -857,28 +984,31 @@ int main(int argc, char **argv)
       // that shows up here as a negative value has killed the session rather
       // than degraded it, which is a different (and much louder) failure than
       // anything the marker table can show.
-      fprintf(fp,"%d,%s,%g,%d,%.3f,%.3f,%.3f,%d,%ld,%ld,%ld,%lu,%lu,%lu,%d\n",
+      fprintf(fp,"%d,%s,%g,%d,%.3f,%.3f,%.3f,%d,%ld,%ld,%ld,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%d\n",
         c.idx,c.name.c_str(),c.ppm,(c.idx>=cfg.nclients)?1:0,
         c.t_status_ok_s,c.t_first_remote_audio_s,c.t_first_marker_s,c.first_marker_from,
         c.markers_emitted,c.markers_skipped,c.markers_decoded,
         c.cond.audio_seen,c.cond.audio_dropped,c.cond.audio_delayed,
+        c.cond.audio_truncated,c.cond.trunc_bytes,
+        c.cond.rx_dropped,c.cond.drop_bytes,
         c.client.GetStatus());
     }
     fclose(fp);
   }
 
-  printf("tag=%s duration=%.1fs markers=%zu clock_rows=%zu\n",
-    cfg.tag.c_str(),t_total,markers.size(),clocks.size());
+  printf("tag=%s duration=%.1fs markers=%zu clock_rows=%zu trunc_rows=%zu\n",
+    cfg.tag.c_str(),t_total,markers.size(),clocks.size(),truncs.size());
   for (size_t si=0; si < live.size(); si ++)
   {
     SimClient &c=sc[live[si]];
     printf("  client %d ppm=%+g status_ok=%.2fs first_audio=%.2fs first_marker=%.2fs "
-           "emitted=%ld decoded=%ld dropped=%lu/%lu\n",
+           "emitted=%ld decoded=%ld dropped=%lu/%lu trunc=%lu/%luB desync=%lu\n",
       c.idx,c.ppm,c.t_status_ok_s,c.t_first_remote_audio_s,c.t_first_marker_s,
       c.markers_emitted,c.markers_decoded,
-      c.cond.audio_dropped,c.cond.audio_seen);
+      c.cond.audio_dropped,c.cond.audio_seen,
+      c.cond.audio_truncated,c.cond.trunc_bytes,c.cond.rx_dropped);
   }
-  printf("  logs: %s, %s, %s, %s\n",mp.c_str(),cp.c_str(),sp.c_str(),cp2.c_str());
+  printf("  logs: %s, %s, %s, %s, %s\n",mp.c_str(),cp.c_str(),sp.c_str(),cp2.c_str(),tp2.c_str());
 
   for (int i=0; i < nslots; i ++) sc[i].client.Disconnect();
   delete[] sc;
