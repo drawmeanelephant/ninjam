@@ -476,8 +476,13 @@ static void draw_connection_section()
 
   // DISCONNECTED belongs here too since issue #29: a byte stream that stopped
   // parsing and a socket that closed share that one status code, so this
-  // string is the only thing that tells them apart.
-  if (st == NJClient::NJC_STATUS_DISCONNECTED || st == NJClient::NJC_STATUS_CANTCONNECT || st == NJClient::NJC_STATUS_INVALIDAUTH)
+  // string is the only thing that tells them apart. The condition is written
+  // as a guard on the string rather than on the status alone so that a
+  // disconnected client with nothing to report renders EXACTLY as it did
+  // before -- display_status() reports DISCONNECTED for the never-connected
+  // case too, and adding a Spacing there shifts every panel below it.
+  if (st == NJClient::NJC_STATUS_CANTCONNECT || st == NJClient::NJC_STATUS_INVALIDAUTH ||
+      (st == NJClient::NJC_STATUS_DISCONNECTED && g_client.GetErrorStr()[0]))
   {
     const char *e=g_client.GetErrorStr();
     if (e && *e)
