@@ -176,6 +176,11 @@ class Scenario:
                 pass
 
         self.interval_ms = f(self.summary.get("interval_s", "nan")) * 1000.0
+        # How long the run was configured to last. The slip threshold is a
+        # PRODUCT of clock error and time (see section 7), so the accumulated
+        # error at the end of a run needs the configured duration, not the
+        # span of the markers that happened to decode.
+        self.duration_s = f(self.summary.get("duration_s", "nan"))
 
         # The detector reports the CENTRE of the correlation window while the
         # marker is emitted at the START of its burst, so err_ms as originally
@@ -209,12 +214,35 @@ class Scenario:
         # Residual of each pair's error from its own median delay, wrapped into
         # +/- half an interval. This is the quantity the interval model is
         # supposed to bound: a client that slips loses or gains a WHOLE
-        # interval, it does not wander continuously off the grid.
+        # interval, it does not wander continuously off the grid. The wrapped
+        # residual is continuous, so the reference it is measured from does not
+        # have to be exact; it stays the pair's median, which is what the
+        # `align mod iv` headline is defined against.
+        #
+        # The whole-INTERVAL INDEX, below, does have to be exact, and that is
+        # what the pair's first heard marker is for. A drifting pair crosses
+        # the boundary about half way through its run, so for half the run its
+        # median IS the midpoint between the two regimes: every pre-slip marker
+        # then sits on an exact +/- 0.5 rounding tie, and int(round(x/L))
+        # flips between 0 and -1 over differences of hundredths of a
+        # millisecond. That is a coin toss rather than a slip, and it was being
+        # reported as a first crossing at 0.23 intervals in drift3000iv2s.
+        # Indexing from the first marker makes the pre-slip offset 0 by
+        # construction, so the transition found is the real one. The absolute
+        # lo/hi figures come from the crossing time and the injected ppm, so
+        # they do not depend on this choice at all.
+        self.base_err = {}
+        for p in self.pairs:
+            for k in self.ks:
+                v = self.by_pair_k.get((p[0], p[1], k))
+                if v:
+                    self.base_err[p] = v[0][1]
+                    break
         self.resid = {}
         self.slips = {}
         for p in self.pairs:
             L = self.interval_ms
-            if L != L or L <= 0 or p not in self.delay:
+            if L != L or L <= 0 or p not in self.delay or p not in self.base_err:
                 continue
             d = {}
             offsets = set()
@@ -223,31 +251,31 @@ class Scenario:
                 if not v:
                     continue
                 x = v[0][1] - self.delay[p]
-                offsets.add(int(round(x / L)))
                 d[k] = (x + L / 2.0) % L - L / 2.0
+                offsets.add(int(round((v[0][1] - self.base_err[p]) / L)))
             self.resid[p] = d
             self.slips[p] = (max(offsets) - min(offsets)) if offsets else 0
 
         # First whole-interval slip, per pair, and when it happened. `slips`
         # above only counts HOW MANY intervals a pair is ever off by; this is
         # WHEN it first got there, which is what turns the threshold into a
-        # rate. Caveat: the median delay is taken over all markers, so if a
-        # pair sits in each regime for about half the run the reported time
-        # is the midpoint rather than the real crossing. The marker grid is
-        # mark_period seconds, so this is the first observed marker on the far
-        # side of the jump -- an upper bound within one mark period.
+        # bracket. A pair carrying a startup offset is still detected
+        # correctly, because it is the CHANGE in whole intervals that counts
+        # and not their absolute value. The marker grid is mark_period
+        # seconds, so this is the first observed marker on the far side of the
+        # jump -- an upper bound within one mark period.
         self.slip_t = {}
         self.slip_bracket = {}
         for p in self.pairs:
             L = self.interval_ms
-            if L != L or L <= 0 or p not in self.delay:
+            if L != L or L <= 0 or p not in self.base_err:
                 continue
             seq = []
             for k in self.ks:
                 v = self.by_pair_k.get((p[0], p[1], k))
                 if v:
                     seq.append((v[0][0],
-                                int(round((v[0][1] - self.delay[p]) / L))))
+                                int(round((v[0][1] - self.base_err[p]) / L))))
             prev = None
             prev_t = None
             for t, o in seq:
@@ -656,13 +684,14 @@ def main():
     print("## 7. Clock-drift threshold for a whole-interval slip\n")
     print("A drifting client does not slide off the grid: its error stays pinned")
     print("to a whole number of intervals and then jumps. The threshold is")
-    print("therefore a RATE and not an offset -- what matters is the clock error")
-    print("a pair has accumulated by the time the session ends, not how fast it")
-    print("is running. `accumulated` is the injected relative clock error,")
-    print("ppm_rel * first_slip_t, i.e. the drift a pair had run up at the moment")
-    print("it first slipped. Compare that against one interval (4000 ms here):")
-    print("if the slips all land near one interval, the interval model is what")
-    print("breaks them, and the threshold is predictable from a spec sheet.\n")
+    print("therefore a PRODUCT of clock error and time, not a rate: what matters")
+    print("is the clock error a pair has accumulated by the time it slips, not")
+    print("how fast it is running. `lo iv` and `hi iv` are that accumulated error")
+    print("at the last marker before and the first marker after the jump, divided")
+    print("by the interval. If the slips all land near one interval, the interval")
+    print("model is what breaks them, and the threshold is predictable from a")
+    print("spec sheet. Section 7b varies the interval to find out whether the")
+    print("result is really in intervals or really in ppm.\n")
     print("`first slip t` is the first marker observed on the far side of the")
     print("jump, so it is an upper bound. The previous marker's time is the")
     print("matching lower bound, and the two are printed together as a bracket.")
@@ -683,8 +712,21 @@ def main():
             br = s.slip_bracket.get(p)
             iv = s.interval_ms
             acc = (lambda t: abs(rel) * t / 1000.0) if br else None
-            first = sorted(s.by_pair_k.get((p[0], p[1], k)) for k in [s.ks[0]])[0][0][1] if s.ks else 8020.0
-            start_iv = int(round((first - 8020.0) / iv)) if iv > 0 else 0
+            # The protocol's structural delay is exactly two intervals, so a
+            # pair that starts one interval out is one interval off the
+            # baseline. This baseline used to be the literal 8020 ms, which is
+            # 2 x 4000 plus the 20 ms detector bias: right for a 4 s run and a
+            # whole interval adrift at every other tempo, which made `start iv`
+            # unusable for the 2 s and 8 s runs the interval comparison needs.
+            base = 2.0 * iv
+            if iv <= 0 or not s.ks:
+                first = base
+            else:
+                v0 = s.by_pair_k.get((p[0], p[1], s.ks[0]))
+                first = v0[0][1] if v0 else base
+            start_iv = int(round((first - base) / iv)) if iv > 0 else 0
+            end_iv = (abs(rel) * s.duration_s / 1000.0 / iv
+                      if iv > 0 and s.duration_s == s.duration_s else float("nan"))
             rows.append([
                 n, f"{p[0]}<-{p[1]}", f"{rel:+g}",
                 fmt(s.delay.get(p, float("nan"))),
@@ -695,10 +737,93 @@ def main():
                 fmt(acc(br[0]) / iv, 2) if br else "n/a",
                 fmt(acc(br[1]) / iv, 2) if br else "n/a",
                 "yes" if br and start_iv == 0 else ("no" if br else "n/a"),
+                fmt(end_iv, 2),
+                fmt(iv, 0),
             ])
     print(table(rows, ["scenario", "pair", "ppm rel", "delay ms", "slips",
                        "start iv", "last aligned s", "first slipped s",
-                       "lo iv", "hi iv", "aligned pair"]))
+                       "lo iv", "hi iv", "aligned pair", "end iv",
+                       "interval ms"]))
+    print()
+    print("`end iv` is the relative clock error a pair has accumulated by the")
+    print("end of its run, in intervals: |ppm rel| * duration / interval. A row")
+    print("whose `lo iv` is n/a never slipped, so its `end iv` is the evidence")
+    print("that the threshold is above that value. `interval ms` is repeated per")
+    print("row because these runs span three tempos and the threshold has to be")
+    print("compared both in intervals and in ppm.\n")
+
+    # --- 7b. does the threshold scale with the interval? -------------------
+    #
+    # Issue #20 asks whether the threshold is one whole interval of
+    # accumulated error -- in which case the ppm at which it happens scales
+    # with the interval, L/T -- or an absolute drift rate, in which case it
+    # does not move when the tempo does. Both hypotheses predict the same
+    # thing at a 4 s interval, so only a change of tempo can separate them.
+    #
+    # In ppm the bracket needs no conversion: the largest relative offset that
+    # finished a run without slipping is a lower bound on the threshold, and
+    # the smallest slipped pair's offset, scaled by its lower-bound interval
+    # fraction, is an upper bound. Pairs carrying a startup offset are
+    # excluded, for the same reason as in the table above.
+    per_iv = {}
+    for n in names:
+        s = sc[n]
+        if not s.ppm or not any(abs(v) > 0 for v in s.ppm.values()):
+            continue
+        d = per_iv.setdefault(s.interval_ms,
+                              {"names": set(), "dur": s.duration_s,
+                               "no_slip": [], "slip": []})
+        d["names"].add(n)
+        for p in s.pairs:
+            iv = s.interval_ms
+            if iv <= 0 or not s.ks:
+                continue
+            rel = abs(s.ppm.get(p[0], 0.0) - s.ppm.get(p[1], 0.0))
+            v = s.by_pair_k.get((p[0], p[1], s.ks[0]))
+            first = v[0][1] if v else 2.0 * iv
+            if int(round((first - 2.0 * iv) / iv)) != 0:
+                continue
+            br = s.slip_bracket.get(p)
+            if br:
+                d["slip"].append((rel, rel * br[0] / 1000.0 / iv,
+                                  rel * br[1] / 1000.0 / iv))
+            else:
+                d["no_slip"].append((rel, rel * s.duration_s / 1000.0 / iv))
+
+    print("## 7b. Does the threshold scale with the interval, or is it a fixed")
+    print("drift rate?\n")
+    print("The same ladder at three tempos, all 660 s. If the threshold is one")
+    print("whole interval of accumulated error then the ppm it happens at must")
+    print("scale with the interval, `L / T`, halving at 2 s and doubling at 8 s.")
+    print("If it were an absolute drift rate the ppm would not move at all --")
+    print("which is what makes this the only way to tell the two apart.\n")
+    rows = []
+    for iv in sorted(per_iv):
+        d = per_iv[iv]
+        ns, sl = d["no_slip"], d["slip"]
+        lo_ppm = max([r for r, _ in ns], default=float("nan"))
+        hi_ppm = min([r * lo for r, lo, _ in sl], default=float("nan"))
+        pred = (iv / d["dur"] * 1000.0) if d["dur"] == d["dur"] else float("nan")
+        rows.append([
+            fmt(iv, 0), len(d["names"]), len(ns), len(sl),
+            fmt(max([e for _, e in ns], default=float("nan")), 2),
+            fmt(min([lo for _, lo, _ in sl], default=float("nan")), 2),
+            fmt(max([hi for _, _, hi in sl], default=float("nan")), 2),
+            fmt(lo_ppm, 0),
+            "[%s, %s]" % (fmt(lo_ppm, 0), fmt(hi_ppm, 0))
+            if lo_ppm == lo_ppm and hi_ppm == hi_ppm else "n/a",
+            fmt(pred, 0),
+        ])
+    print(table(rows, ["interval ms", "runs", "no-slip pairs", "slipped pairs",
+                       "no-slip max iv", "slip lo iv", "slip hi iv",
+                       "no-slip max ppm", "threshold ppm", "predicted L/T ppm"]))
+    print()
+    print("`no-slip max ppm` is the largest relative offset that finished a run")
+    print("still aligned, so the threshold lies above it; `threshold ppm` adds the")
+    print("smallest slipped pair's lower bound. `predicted L/T ppm` is what a")
+    print("one-whole-interval threshold predicts at this tempo. Agreement between")
+    print("the last two columns means the threshold scales with the interval;")
+    print("a `threshold ppm` that stays put across tempos would mean a fixed rate.")
     print()
 
     # --- 8. integrity ------------------------------------------------------

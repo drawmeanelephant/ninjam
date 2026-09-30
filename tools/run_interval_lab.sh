@@ -91,6 +91,28 @@ TRUNC_SECS="$RESID_SECS"
 # period below 2.5x the interval, because two consecutive markers closer
 # than that cannot be told apart from a single detection.
 #
+# The threshold depends on the interval (issue #20, second half). The ladder
+# above is entirely at a 4 s interval, where the two candidate laws predict
+# the SAME number:
+#   (a) one whole interval of accumulated error  ->  ppm = L / T  = 6061
+#   (b) an absolute relative clock error         ->  ppm = 6061, always
+# so the 4 s runs cannot tell them apart. These rungs repeat the ladder at
+# 2 s and 8 s, where (a) predicts 3030 and 12121 ppm and (b) still predicts
+# 6061. Rungs are chosen so that (a) and (b) disagree about whether the pair
+# slips at all:
+#   2 s:  2000 -> 0.61 iv (1<-2 at 4000 -> 1.21 iv)
+#         3000 -> 0.91 iv (1<-2 at 6000 -> 1.82 iv)
+#         4000 -> 1.21 iv
+#   8 s:  6000 -> 0.99 iv (1<-2 at 12000 -> 1.98 iv)
+#         8000 -> 1.32 iv
+#         12000 -> 1.98 iv
+# A slip at 4000 ppm/2 s, or at 12000 ppm/8 s, is a slip (b) forbids. A pair
+# that slips at 1.2 iv but not at 1.0 iv, in every tempo, is (a). The
+# threshold in ppm then scales with the interval and nothing else does.
+# The mark period is kept at 12 s for the 2 s runs (6x the interval, the same
+# absolute grid as the 4 s ladder) and 20 s for the 8 s runs, which is the
+# 2.5x minimum the lab enforces and the tempo interval8s already uses.
+#
 # Residual attribution (issue #21). The emission-to-playback delay is two
 # intervals plus a constant ~20 ms that does not move when the interval
 # length changes 4x. Two candidate causes:
@@ -130,6 +152,12 @@ drift3000|$DRIFT_SECS|0:3000:-3000|3
 drift4000|$DRIFT_SECS|0:4000:-4000|3
 drift6000|$DRIFT_SECS|0:6000:-6000|3
 drift12000|$DRIFT_SECS|0:12000:-12000|3
+drift2000iv2s|$DRIFT_SECS|0:2000:-2000|3|--bpi=4
+drift3000iv2s|$DRIFT_SECS|0:3000:-3000|3|--bpi=4
+drift4000iv2s|$DRIFT_SECS|0:4000:-4000|3|--bpi=4
+drift6000iv8s|$DRIFT_SECS|0:6000:-6000|3|--bpi=16 --mark-period=20
+drift8000iv8s|$DRIFT_SECS|0:8000:-8000|3|--bpi=16 --mark-period=20
+drift12000iv8s|$DRIFT_SECS|0:12000:-12000|3|--bpi=16 --mark-period=20
 loss1|$LOSS_SECS||3|--up-loss=1 --down-loss=1
 loss5|$LOSS_SECS||3|--up-loss=5 --down-loss=5
 loss10|$LOSS_SECS||3|--up-loss=10 --down-loss=10
@@ -177,7 +205,7 @@ EOF
 }
 
 if [ "$ONLY" = "__list__" ]; then
-  scenarios | cut -d'|' -f1
+  scenarios | sed -n 's/^\([^#|][^|]*\)|.*/\1/p'
   exit 0
 fi
 
@@ -206,7 +234,14 @@ mkdir -p "$OUT_DIR"
 # --- run the matrix --------------------------------------------------------
 echo "== running scenarios into $OUT_DIR"
 scenarios | while IFS='|' read -r name secs ppm nclients extra; do
-  [ -n "$name" ] || continue
+  # The scenario list is a heredoc of commentary and one pipe-separated record
+  # per line. Blank and comment lines have to be dropped here: without this the
+  # unfiltered run -- the documented "one command reproduces everything" --
+  # feeds the commentary to the lab as a scenario called "# name " with a
+  # duration of "duration", and dies on the first line under `set -e`.
+  case "$name" in
+    ''|\#*) continue ;;
+  esac
   if [ -n "$ONLY" ]; then
     case ",$ONLY," in *",$name,"*) ;; *) continue ;; esac
   fi

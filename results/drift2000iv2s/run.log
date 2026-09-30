@@ -1,0 +1,5 @@
+tag=drift2000iv2s duration=660.0s markers=324 clock_rows=19482 trunc_rows=0
+  client 0 ppm=+0 status_ok=0.02s first_audio=16.05s first_marker=16.06s emitted=54 decoded=108 dropped=0/658 trunc=0/0B desync=0
+  client 1 ppm=+2000 status_ok=0.02s first_audio=16.05s first_marker=16.02s emitted=55 decoded=108 dropped=0/660 trunc=0/0B desync=0
+  client 2 ppm=-2000 status_ok=0.02s first_audio=14.12s first_marker=14.09s emitted=54 decoded=108 dropped=0/658 trunc=0/0B desync=0
+  logs: /Users/tbuddy/dev/z/ninjam-001/results/drift2000iv2s/drift2000iv2s_markers.csv, /Users/tbuddy/dev/z/ninjam-001/results/drift2000iv2s/drift2000iv2s_clock.csv, /Users/tbuddy/dev/z/ninjam-001/results/drift2000iv2s/drift2000iv2s_summary.txt, /Users/tbuddy/dev/z/ninjam-001/results/drift2000iv2s/drift2000iv2s_clients.csv, /Users/tbuddy/dev/z/ninjam-001/results/drift2000iv2s/drift2000iv2s_trunc.csv

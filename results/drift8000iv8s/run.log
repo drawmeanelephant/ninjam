@@ -1,0 +1,5 @@
+tag=drift8000iv8s duration=660.0s markers=192 clock_rows=19461 trunc_rows=0
+  client 0 ppm=+0 status_ok=0.02s first_audio=28.03s first_marker=28.06s emitted=32 decoded=64 dropped=0/164 trunc=0/0B desync=0
+  client 1 ppm=+8000 status_ok=0.02s first_audio=35.75s first_marker=35.77s emitted=33 decoded=64 dropped=0/166 trunc=0/0B desync=0
+  client 2 ppm=-8000 status_ok=0.02s first_audio=28.33s first_marker=28.29s emitted=32 decoded=64 dropped=0/162 trunc=0/0B desync=0
+  logs: /Users/tbuddy/dev/z/ninjam-001/results/drift8000iv8s/drift8000iv8s_markers.csv, /Users/tbuddy/dev/z/ninjam-001/results/drift8000iv8s/drift8000iv8s_clock.csv, /Users/tbuddy/dev/z/ninjam-001/results/drift8000iv8s/drift8000iv8s_summary.txt, /Users/tbuddy/dev/z/ninjam-001/results/drift8000iv8s/drift8000iv8s_clients.csv, /Users/tbuddy/dev/z/ninjam-001/results/drift8000iv8s/drift8000iv8s_trunc.csv
