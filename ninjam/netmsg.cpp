@@ -90,6 +90,28 @@ int Net_Message::makeMessageHeader(void *data) // makes message header, data sho
 
 
 
+// Build a copy of an audio write message with the last `cut` bytes of its
+// payload removed. The framing is preserved -- the guid, and the flags byte
+// whose low bit marks the final write of an interval -- so what reaches the
+// peer is a well-formed message carrying less audio, which is the case the
+// protocol silently accepts. A copy rather than an in-place resize because
+// messages are refcounted and shared: the server hands the same Net_Message
+// to every other participant, so shrinking it in place would truncate the
+// upload for all of them and desynchronise the sender's own byte count.
+static Net_Message *truncated_write(Net_Message *m, int cut)
+{
+  const int newsz=m->get_size()-cut;
+  if (newsz < NJCond::AUDIO_WRITE_HEADER) return 0;
+
+  Net_Message *nm=new Net_Message;
+  nm->set_type(m->get_type());
+  nm->set_size(newsz);
+  if (nm->get_size() != newsz) { delete nm; return 0; }
+  memcpy(nm->get_data(),m->get_data(),(size_t)newsz);
+  return nm;
+}
+
+
 Net_Message *Net_Connection::Run(int *wantsleep)
 {
   if (!m_con || m_error) return 0;
@@ -180,6 +202,7 @@ Net_Message *Net_Connection::Run(int *wantsleep)
   {
     m_recvmsg=new Net_Message;
     m_recvstate=0;
+    m_rxdropdone=0;
   }
 
   // Only take new bytes off the wire when nothing is still being held: TCP
@@ -205,13 +228,46 @@ Net_Message *Net_Connection::Run(int *wantsleep)
       if (a==0) break;
       m_recvstate=1;
     }
-    int b2=m_recvmsg->parseAddBytes(buf+a,bufl-a);
 
-    m_con->recv_bytes(buf,b2+a); // dump our bytes that we used
+    // Mid-message byte-stream truncation: with a configured probability,
+    // discard N bytes from the front of this message's body, so the bytes
+    // that follow are read into the wrong offsets. Once that happens the
+    // length-prefixed framing is misaligned and cannot be recovered -- there
+    // is no resync marker to search for, and the header of whatever comes
+    // next is read out of audio data. Only attempted when enough body bytes
+    // are already buffered to guarantee the loss lands inside this message,
+    // and only once per message.
+    int off=a;
+    if (!m_rxdropdone)
+    {
+      const int nd=NJCond::rx_byte_drop(m_recvmsg->get_type());
+      if (nd > 0 && (bufl-off) >= nd)
+      {
+        off+=nd;
+        m_rxdropdone=1;
+      }
+    }
+
+    int b2=m_recvmsg->parseAddBytes(buf+off,bufl-off);
+
+    m_con->recv_bytes(buf,b2+off); // dump our bytes that we used
 
     if (m_recvmsg->parseBytesNeeded()<1)
     {
       parsed_any=true;
+
+      // Tail truncation: a completed audio write arrives intact as a message
+      // but short. Handed on as a copy with the tail of the payload removed.
+      const int cut=NJCond::trunc_cut(m_recvmsg->get_type(),m_recvmsg->get_size());
+      if (cut > 0)
+      {
+        Net_Message *sh=truncated_write(m_recvmsg,cut);
+        if (sh)
+        {
+          delete m_recvmsg;
+          m_recvmsg=sh;
+        }
+      }
 
       // Receive-side adverse conditions: when the thread running this
       // connection has an inbound delay configured, audio messages are parked
@@ -225,6 +281,7 @@ Net_Message *Net_Connection::Run(int *wantsleep)
         enqueueRxDelayed(rxd, m_recvmsg);
         m_recvmsg=0;
         m_recvstate=0;
+        m_rxdropdone=0;
         m_last_recv=now; // data did arrive; keep the keepalive timer honest
         // m_recvmsg is NULL past this point and the hold now gates the wire,
         // so this receive pass is done; the next Run() re-enters cleanly.
@@ -235,6 +292,7 @@ Net_Message *Net_Connection::Run(int *wantsleep)
         retv=m_recvmsg;
         m_recvmsg=0;
         m_recvstate=0;
+        m_rxdropdone=0;
       }
     }
     if (wantsleep) *wantsleep=0;

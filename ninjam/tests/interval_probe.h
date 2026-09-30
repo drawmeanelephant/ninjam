@@ -83,6 +83,11 @@ static inline int lab_mark_freq(int i)
   return 400 + 300*i;
 }
 
+// The steady tone (LabConfig::steady) sits below the lowest marker
+// frequency so it cannot be mistaken for one, and comfortably inside the
+// decimated rate's Nyquist.
+#define LAB_STEADY_FREQ 250.0
+
 // Write a Hann-windowed tone burst of n samples into dst.
 static inline void lab_make_tone(float *dst, int n, int srate, int freq, double amp)
 {
@@ -341,12 +346,38 @@ struct LabConfig
   double amplitude;      // marker transmit amplitude
   double threshold;      // detector acceptance, 0..1
 
+  // Steady low-level tone on every channel, 0 disables. The marker bursts
+  // leave the channel silent in between, so a detector can only say whether
+  // a burst that was supposed to be there arrived -- it cannot show WHERE a
+  // stream stopped, how much was lost, or whether the decoder filled the gap
+  // with noise. A constant tone makes the decoded level of each remote
+  // channel a continuous measure of "is this channel's audio flowing", at the
+  // clock probe's 10 Hz. Kept far below the marker amplitude so it does not
+  // disturb detection, and on a frequency none of the markers use.
+  double steady;
+
   double late_join_at;   // wall seconds; <0 disables
 
   // per-client uplink profile: audio loss %, delay ms, jitter ms
   double up_loss, up_delay, up_jitter;
   // server downlink profile (passed to the server process via NJCOND_*)
   double down_loss, down_delay, down_jitter;
+
+  // Truncation profile (issue #23). Losing a whole audio message is only
+  // one way a write can go missing; the other is that it arrives SHORT --
+  // intact as a message, with the tail of its payload gone -- which the
+  // protocol accepts silently. Two further variants model the byte stream
+  // rather than the message: a raw mid-body byte loss, which misaligns the
+  // length-prefixed framing.
+  //
+  // down_* are injected on each client thread, so they hit the messages that
+  // ONE client receives, i.e. the downlink, and each client can carry a
+  // different rate. srv_* are injected on the server's own receive thread via
+  // NJCOND_* and so hit the UPLINK of whichever connection the roll lands on.
+  double down_trunc_pct;  int down_trunc_bytes;
+  double down_drop_pct;   int down_drop_bytes;
+  double srv_trunc_pct;   int srv_trunc_bytes;
+  double srv_drop_pct;    int srv_drop_bytes;
 
   // Per-client added latency, in ms of ONE-WAY delay applied in both
   // directions (client -> server AND server -> client), colon-separated one
@@ -369,9 +400,13 @@ struct LabConfig
   LabConfig()
     : nclients(3), duration(60.0), mark_period(12.0), mark_len(1920),
       mark_decim(8), bpi(8), bpm(120), bitrate(128), amplitude(0.5),
-      threshold(0.50), late_join_at(-1.0),
+      threshold(0.50), steady(0.0), late_join_at(-1.0),
       up_loss(0.0), up_delay(0.0), up_jitter(0.0),
-      down_loss(0.0), down_delay(0.0), down_jitter(0.0)
+      down_loss(0.0), down_delay(0.0), down_jitter(0.0),
+      down_trunc_pct(0.0), down_trunc_bytes(0),
+      down_drop_pct(0.0), down_drop_bytes(0),
+      srv_trunc_pct(0.0), srv_trunc_bytes(0),
+      srv_drop_pct(0.0), srv_drop_bytes(0)
   {
   }
 
@@ -399,6 +434,7 @@ struct LabConfig
       else if (key=="bitrate") bitrate=atoi(val.c_str());
       else if (key=="amplitude") amplitude=atof(val.c_str());
       else if (key=="threshold") threshold=atof(val.c_str());
+      else if (key=="steady") steady=atof(val.c_str());
       else if (key=="late-join") late_join_at=atof(val.c_str());
       else if (key=="client-delay")
       {
@@ -434,6 +470,14 @@ struct LabConfig
       else if (key=="down-loss") down_loss=atof(val.c_str());
       else if (key=="down-delay") down_delay=atof(val.c_str());
       else if (key=="down-jitter") down_jitter=atof(val.c_str());
+      else if (key=="trunc-pct") down_trunc_pct=atof(val.c_str());
+      else if (key=="trunc-bytes") down_trunc_bytes=atoi(val.c_str());
+      else if (key=="desync-pct") down_drop_pct=atof(val.c_str());
+      else if (key=="desync-bytes") down_drop_bytes=atoi(val.c_str());
+      else if (key=="srv-trunc-pct") srv_trunc_pct=atof(val.c_str());
+      else if (key=="srv-trunc-bytes") srv_trunc_bytes=atoi(val.c_str());
+      else if (key=="srv-desync-pct") srv_drop_pct=atof(val.c_str());
+      else if (key=="srv-desync-bytes") srv_drop_bytes=atoi(val.c_str());
       else
       {
         fprintf(stderr,"unknown option: %s\n",a.c_str());

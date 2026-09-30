@@ -116,6 +116,7 @@ class Scenario:
         self.marks = read_csv(os.path.join(d, f"{name}_markers.csv"))
         self.clocks = read_csv(os.path.join(d, f"{name}_clock.csv"))
         self.clients = read_csv(os.path.join(d, f"{name}_clients.csv"))
+        self.truncs = read_csv(os.path.join(d, f"{name}_trunc.csv"))
         self.summary = read_summary(os.path.join(d, f"{name}_summary.txt"))
         self._index()
 
@@ -325,6 +326,83 @@ class Scenario:
     def suspects(self):
         return sum(1 for r in self.marks if int(r["suspect"]))
 
+    # -- truncation (issue #23) --------------------------------------------
+    #
+    # A truncation is recorded in <tag>_trunc.csv as the moment a client
+    # received a damaged audio message, tagged with where its own playback
+    # head was. What that message carries is heard one interval later: audio
+    # for interval N is received as N closes and played during N+1, so the
+    # damage lands at the playback position the client was at plus one
+    # interval. (The TWO-interval figure elsewhere in this report is
+    # emission to playback, and reception is the midpoint of the two.)
+    def trunc_events(self):
+        """(listener, affected_playback_pos_ms, cut, msg) per event."""
+        out = []
+        for r in self.truncs:
+            out.append((
+                int(r["listener"]),
+                f(r["spos_ms"]) + self.interval_ms,
+                f(r["cut_bytes"]),
+                f(r["msg_bytes"]),
+            ))
+        return sorted(out, key=lambda x: (x[0], x[1]))
+
+    def gaps(self):
+        """Silent runs on each remote channel, as (listener, col) -> runs.
+
+        With --steady the emitters carry a quiet constant tone, so a channel's
+        decoded level says whether its audio is flowing right now. The live
+        level is not known in advance -- it comes back through the codec and
+        the mixer well below what was transmitted -- so the threshold is
+        calibrated per channel from that channel's own median, and a run
+        counts as silent below 40% of it.
+
+        Returns {listener: [(col, start_ms, end_ms, peak_inside, live)]}.
+        The interval before a channel has ever been heard is dropped: nothing
+        has arrived yet, which is the two-interval pipeline filling up and not
+        a loss.
+        """
+        L = self.interval_ms
+        by_l = defaultdict(list)
+        for r in self.clocks:
+            by_l[int(r["idx"])].append(r)
+        out = {}
+        for li, rows in by_l.items():
+            rows.sort(key=lambda r: f(r["spos_ms"]))
+            ncol = 0
+            for k in rows[0]:
+                if k.startswith("upk"):
+                    ncol = max(ncol, int(k[3:]) + 1)
+            runs = []
+            for col in range(ncol):
+                key = f"upk{col}"
+                vals = [f(r.get(key)) for r in rows]
+                if not vals:
+                    continue
+                med = median(vals)
+                if med <= 0:
+                    continue  # channel never carried anything
+                th = med * 0.4
+                first_live = next((i for i, v in enumerate(vals) if v >= th), None)
+                if first_live is None:
+                    continue
+                cur = None
+                for i, r in enumerate(rows):
+                    p = f(r["spos_ms"])
+                    if i < first_live:
+                        continue
+                    if f(r.get(key)) < th:
+                        cur = [p, p, 0.0] if cur is None else [cur[0], p, cur[2]]
+                        if f(r.get(key)) > cur[2]:
+                            cur[2] = f(r.get(key))
+                    elif cur:
+                        runs.append((col, cur[0], cur[1], cur[2], med))
+                        cur = None
+                if cur:
+                    runs.append((col, cur[0], cur[1], cur[2], med))
+            out[li] = runs
+        return out
+
 
 def main():
     root = sys.argv[1] if len(sys.argv) > 1 else "results"
@@ -355,7 +433,11 @@ def main():
         iv = f(s.summary.get("interval_s", "nan")) * 1000.0  # ms
         bias = s.centre_bias_ms
         if not s.delay:
-            rows.append([n, fmt(iv / 1000.0, 2), fmt(bias, 2), "no data", "", "", ""])
+            # ms, like the data rows below. This branch used to divide by
+            # 1000 and print seconds while the data branch printed
+            # milliseconds, so the same column meant two different things
+            # depending on the row.
+            rows.append([n, fmt(iv, 2), fmt(bias, 2), "no data", "", "", ""])
             continue
         ds = [d - bias for d in s.delay.values()]
         ivs = [d / iv for d in ds] if iv == iv and iv > 0 else [float("nan")]
@@ -364,7 +446,7 @@ def main():
             fmt(min(ds)), fmt(median(ds)), fmt(max(ds)),
             fmt(median([v for v in ivs if v == v]), 4),
         ])
-    print(table(rows, ["scenario", "interval s", "centre bias ms", "min delay",
+    print(table(rows, ["scenario", "interval ms", "centre bias ms", "min delay",
                        "median delay", "max delay", "median delay / interval"]))
     print()
     print("`centre bias ms` is the detector's half-burst centring offset,")
@@ -402,7 +484,11 @@ def main():
     for n in names:
         s = sc[n]
         if not s.align or not s.drift or not s.align_ks:
-            rows.append([n, "no data"] + [""] * 9)
+            # 10 columns, so 8 blanks after the scenario name. This row used
+            # to carry 9, which only showed up as an IndexError once a
+            # scenario decoded no markers at all (the desync runs, where the
+            # session dies before any marker is measurable).
+            rows.append([n, "no data"] + [""] * 8)
             continue
         first_k, last_k = s.align_ks[0], s.align_ks[-1]
         worst = max(s.drift, key=lambda p: abs(s.drift[p]))
@@ -645,6 +731,178 @@ def main():
     print("They are excluded above -- the strongest hit wins -- and they are not")
     print("evidence of anything NINJAM did. The detector now suppresses them at")
     print("source, so re-running with the current code gives 0 here.\n")
+
+    # --- 9. truncation (issue #23) -----------------------------------------
+    # A whole audio message going missing is only one way a write can fail to
+    # arrive intact. The other is that it arrives SHORT -- intact as a
+    # message, with the tail of its payload gone -- and a third is that the
+    # byte stream is cut in the middle of a message, which the length-prefixed
+    # framing cannot survive at all. They are not variants of one fault.
+    # The control is selected by the steady tone: every scenario that carries
+    # one is a truncation run, including the deliberately uninjected control.
+    tr_names = [n for n in names
+                if f(sc[n].summary.get("steady", 0)) > 0
+                or sc[n].truncs
+                or f(sc[n].summary.get("down_trunc_pct", 0)) > 0
+                or f(sc[n].summary.get("down_drop_pct", 0)) > 0
+                or f(sc[n].summary.get("srv_trunc_pct", 0)) > 0
+                or f(sc[n].summary.get("srv_drop_pct", 0)) > 0]
+    if tr_names:
+        print("## 9. Truncated messages and truncated byte streams\n")
+        print("Loss of a whole audio message is one way a write fails to arrive intact.")
+        print("The other is that it arrives SHORT -- intact as a message, with the tail")
+        print("of its payload gone -- which nothing detects, because a message's payload")
+        print("length is whatever the message says it is")
+        print("(`mpb_server_download_interval_write::parse` takes `audio_data_len` from")
+        print("the message size and has nothing to check it against). A third case is")
+        print("the byte stream itself being cut mid-message. `--steady` puts a quiet")
+        print("constant tone on every channel so a remote channel's decoded level is a")
+        print("continuous measure of whether its audio is flowing; the runs below are")
+        print("measured gaps in that level, at the clock probe's 10 Hz.\n")
+
+        # 9a: what happened to the session
+        rows = []
+        for n in tr_names:
+            s = sc[n]
+            for c in s.clients:
+                rows.append([
+                    n, c["idx"],
+                    c.get("final_status", "?"),
+                    f"{c.get('markers_decoded', '?')}/{c.get('markers_emitted', '?')}",
+                    c.get("rx_msgs_truncated", "0"),
+                    c.get("trunc_bytes", "0"),
+                    c.get("rx_msgs_dropped", "0"),
+                    c.get("drop_bytes", "0"),
+                ])
+        print(table(rows, ["scenario", "client", "final status", "markers heard",
+                           "msgs truncated", "bytes cut", "msgs byte-dropped",
+                           "bytes dropped"]))
+        print()
+        print("`final status` is the NJClient status at teardown: 0 is still healthy.")
+        print("A negative value killed the session instead of degrading it.")
+        print("`markers heard` is decodes over markers emitted by the other clients.\n")
+
+        # 9b: extent of the damage
+        #
+        # Measured from the gaps, not from the events. When the injector is on
+        # the receive side of a client the two should line up one to one, but
+        # when it is on the server's receive thread the client has no record of
+        # the event at all -- the gap is the only evidence, and attributing it
+        # the other way round would quietly drop those runs.
+        rows = []
+        for n in tr_names:
+            s = sc[n]
+            L = s.interval_ms
+            if L <= 0:
+                continue
+            gps = s.gaps()
+            starts, durs, nspan, inpk, lvs = [], [], [], [], []
+            ends_at_edge = 0
+            ngaps = 0
+            for li, runs in gps.items():
+                evs = [e for e in s.trunc_events() if e[0] == li]
+                for (col, a, b, pk, live) in runs:
+                    ngaps += 1
+                    starts.append(a - (a // L) * L)
+                    durs.append(b - a)
+                    nspan.append((b - a) / L)
+                    inpk.append(pk)
+                    lvs.append(live)
+                    rem = b % L
+                    if min(rem, L - rem) <= 150:
+                        ends_at_edge += 1
+            # an event explains a gap when the gap begins at or after the
+            # event and inside the interval the event damaged: the audio
+            # already decoded when the damage happened still plays out, so the
+            # gap starts a little AFTER the event rather than at it
+            n_matched = 0
+            for (li, pos, cut, msg) in s.trunc_events():
+                if any(g[1] >= pos - 150 and g[1] < pos + L
+                       for g in gps.get(li, [])):
+                    n_matched += 1
+            rows.append([
+                n, ngaps, len(s.trunc_events()), n_matched,
+                fmt(median(starts)) if starts else "n/a",
+                fmt(min(durs)) if durs else "n/a",
+                fmt(median(durs)) if durs else "n/a",
+                fmt(max(durs)) if durs else "n/a",
+                fmt(median(nspan), 2) if nspan else "n/a",
+                fmt(max(nspan), 2) if nspan else "n/a",
+                f"{ends_at_edge}/{ngaps}" if ngaps else "n/a",
+                fmt(median(inpk), 5) if inpk else "n/a",
+                fmt(median(lvs), 5) if lvs else "n/a",
+            ])
+        print(table(rows, ["scenario", "gaps", "events recorded",
+                           "events matched to a gap",
+                           "median start in interval ms", "min gap ms",
+                           "median gap ms", "max gap ms",
+                           "median gap / interval", "max gap / interval",
+                           "gaps ending on an interval edge",
+                           "median level in gap", "median live level"]))
+        print()
+        print("`start in interval` is how far into its interval a channel's audio")
+        print("stopped. Damage to a write is heard one interval after the message")
+        print("arrives, since audio for interval N is received as N closes and")
+        print("played during N+1; audio already decoded when the message was cut")
+        print("still plays out, so the gap starts slightly after the event.\n")
+        print("`max gap / interval` is the bleed test. A gap reaching two or more")
+        print("intervals would mean a damaged stream carried into the next one, or")
+        print("that the session died. The column is the longest gap anywhere in the")
+        print("run, so a value below 1.0 means no gap ever crossed an interval")
+        print("boundary, and a large one is a killed session rather than a gap.\n")
+        print("`median level in gap` against `median live level` is what the decoder")
+        print("produced while the stream was damaged, next to what the same channel")
+        print("carries when it is healthy. A decoder that emitted noise, or that")
+        print("resynchronised onto garbage, would put the damaged level near the live")
+        print("one. The control row is the check on this: with no damage injected, no")
+        print("sample of any channel ever falls below the threshold at all, so the")
+        print("two states really are distinct rather than a threshold artefact.\n")
+        print("`events recorded` is 0 for the server-side rows on purpose: the")
+        print("injector is on the server's receive thread and the client keeps no")
+        print("record of it, so only the gap shows that anything happened.\n")
+
+        # 9c: fan-out -- who else loses audio at the same interval
+        rows = []
+        for n in tr_names:
+            s = sc[n]
+            L = s.interval_ms
+            if L <= 0:
+                continue
+            gps = s.gaps()
+            per_iv = defaultdict(lambda: defaultdict(set))
+            for li, runs in gps.items():
+                for (col, a, b, pk, live) in runs:
+                    per_iv[int(a // L)][li].add(col)
+            cnt = defaultdict(int)
+            same_emitter = 0
+            for iv, byl in per_iv.items():
+                cnt[len(byl)] += 1
+                # two clients losing a gap in the same interval, on the same
+                # channel index, is the signature of one damaged upload being
+                # forwarded rather than two independent rolls
+                if len(byl) >= 2:
+                    cols = [set(v) for v in byl.values()]
+                    common = set.intersection(*cols) if cols else set()
+                    if common:
+                        same_emitter += 1
+            rows.append([n, len(per_iv)] + [cnt[i] for i in (1, 2, 3)]
+                        + [same_emitter])
+        print(table(rows, ["scenario", "intervals with a gap",
+                           "only 1 client affected", "2 clients affected",
+                           "3 clients affected",
+                           "2+ clients, same emitter index"]))
+        print()
+        print("Truncating what a client RECEIVES damages that client alone. Truncating")
+        print("on the server's receive thread damages an UPLOAD, which the server then")
+        print("forwards, so one damaged write costs every other participant the same")
+        print("interval at the same moment. The last column is the check: in the")
+        print("server-side row the clients that lost audio in the same interval lost")
+        print("it on the SAME emitter index, which two independent rolls would not")
+        print("reproduce. A downlink truncation is confined to one client by")
+        print("construction, so any interval with two clients affected there is two")
+        print("rolls landing together by chance.\n")
+        print("`truncloss` is the comparison for scale: the same number of messages")
+        print("lost whole rather than shortened.\n")
     return 0
 
 

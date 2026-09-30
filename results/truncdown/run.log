@@ -1,0 +1,5 @@
+tag=truncdown duration=200.0s markers=174 clock_rows=5865 trunc_rows=28
+  client 0 ppm=+0 status_ok=0.02s first_audio=4.08s first_marker=10.56s emitted=30 decoded=57 dropped=0/198 trunc=11/22000B desync=0
+  client 1 ppm=+0 status_ok=0.02s first_audio=4.08s first_marker=10.56s emitted=30 decoded=58 dropped=0/198 trunc=8/16000B desync=0
+  client 2 ppm=+0 status_ok=0.02s first_audio=4.08s first_marker=10.56s emitted=30 decoded=59 dropped=0/198 trunc=9/18000B desync=0
+  logs: /Users/tbuddy/dev/z/ninjam-001/results/truncdown/truncdown_markers.csv, /Users/tbuddy/dev/z/ninjam-001/results/truncdown/truncdown_clock.csv, /Users/tbuddy/dev/z/ninjam-001/results/truncdown/truncdown_summary.txt, /Users/tbuddy/dev/z/ninjam-001/results/truncdown/truncdown_clients.csv, /Users/tbuddy/dev/z/ninjam-001/results/truncdown/truncdown_trunc.csv

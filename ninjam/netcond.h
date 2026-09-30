@@ -25,6 +25,17 @@
     picks its profile up from the NJCOND_* environment variables in
     init_from_env().
 
+    Message loss is the mild case, not the only one (issue #23). A write
+    can also arrive SHORT -- intact as a message, with the tail of its
+    audio payload missing -- which the protocol accepts silently, because
+    the payload length is simply whatever the message says it is
+    (mpb_server_download_interval_write::parse derives audio_data_len from
+    the message size, with no length to check it against). A byte stream
+    truncated in the MIDDLE of a message is a third and quite different
+    case: the framing is a bare type plus 32 bit length with no resync
+    marker, so one lost byte misaligns every message after it. Both are
+    injected here, on the receive side, and they behave nothing alike.
+
     This header is always compiled in but is inert unless a profile is
     set, so normal builds are unaffected.
 */
@@ -58,12 +69,49 @@ namespace NJCond
     }
   };
 
+  // Truncation of the inbound stream, the other way an audio message can go
+  // missing besides being dropped whole (issue #23). It lives outside Profile
+  // because it is receive-side only, like rx_delay_ms() below, and because
+  // Profile is a plain aggregate that a caller is expected to fill in
+  // completely -- an unmentioned field there is a bug waiting to happen.
+  //
+  // trunc_pct / trunc_bytes model a SHORT message: intact framing, the tail
+  // of the audio payload missing. The peer cannot tell it from a complete
+  // write, because the payload length is simply whatever the message claims.
+  //
+  // drop_pct / drop_bytes model a truncated BYTE STREAM: N bytes vanish from
+  // the middle of a message body, so the length-prefixed framing that follows
+  // is misaligned and there is no resync marker to recover it with. The two
+  // are not variations on the same fault; they fail differently.
+  struct RxTrunc
+  {
+    double trunc_pct;
+    int    trunc_bytes;
+    double drop_pct;
+    int    drop_bytes;
+  };
+
+  void set_rx_trunc(double trunc_pct, int trunc_bytes,
+                    double drop_pct, int drop_bytes);
+  const RxTrunc &rx_trunc();
+
+  // Bytes of framing in front of the audio payload of an INTERVAL_WRITE: a
+  // 16 byte guid plus a 1 byte flags field, the last bit of which marks the
+  // final write of an interval. See
+  // mpb_server_download_interval_write::parse (ninjam/mpb.cpp).
+  enum { AUDIO_WRITE_HEADER = 17 };
+
   struct Stats
   {
     unsigned long audio_seen;      // audio messages offered to Send()
     unsigned long audio_dropped;   // dropped by the loss filter
     unsigned long audio_delayed;   // held back by the delay/jitter filter
     unsigned long audio_bytes;     // total bytes of audio messages seen
+    unsigned long audio_truncated; // inbound audio writes shortened
+    unsigned long trunc_bytes;     // bytes removed by shortening
+    unsigned long trunc_msg_bytes; // total size of the messages that were cut
+    unsigned long rx_dropped;      // inbound audio messages cut mid-body
+    unsigned long drop_bytes;      // bytes lost off the wire that way
     double delay_applied_ms;       // sum of all delays applied (for mean)
   };
 
@@ -78,8 +126,28 @@ namespace NJCond
   void reset_stats();
 
   // read NJCOND_AUDIO_LOSS_PCT / NJCOND_AUDIO_DELAY_MS / NJCOND_AUDIO_JITTER_MS
-  // into the calling thread's profile. No-op if they are unset.
+  // into the calling thread's profile, and NJCOND_AUDIO_TRUNC_PCT /
+  // NJCOND_AUDIO_TRUNC_BYTES / NJCOND_RX_DROP_PCT / NJCOND_RX_DROP_BYTES into
+  // its truncation state. No-op for whatever is unset.
   void init_from_env();
+
+  // Truncation rolls, called by Net_Connection::Run for each inbound audio
+  // message. Both are receive-side: what a truncation models is what the
+  // receiver ended up with, and the receive side is also the only place a
+  // per-participant value can be applied (see rx_delay_ms() on why the send
+  // side cannot carry one).
+  //
+  // trunc_cut returns how many bytes to remove from the TAIL of an inbound
+  // message's audio payload, 0 to deliver it intact. Only INTERVAL_WRITE
+  // messages have an audio payload, and the cut never eats the 17 byte
+  // header, so the result is always a well-formed short write.
+  int trunc_cut(int type, int size);
+
+  // rx_byte_drop returns how many bytes to discard from the front of an
+  // inbound audio message's BODY, 0 not to. The caller must only apply a
+  // non-zero result when at least that many body bytes are already buffered,
+  // so the loss can never land on a message boundary by accident.
+  int rx_byte_drop(int type);
 
   // The delay/jitter profile (audio_delay_ms / audio_jitter_ms) is applied
   // where messages are SENT, on the sending thread. Symmetric per-link

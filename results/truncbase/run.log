@@ -1,0 +1,5 @@
+tag=truncbase duration=200.0s markers=180 clock_rows=5868 trunc_rows=0
+  client 0 ppm=+0 status_ok=0.02s first_audio=4.09s first_marker=10.56s emitted=30 decoded=60 dropped=0/198 trunc=0/0B desync=0
+  client 1 ppm=+0 status_ok=0.02s first_audio=4.09s first_marker=10.56s emitted=30 decoded=60 dropped=0/198 trunc=0/0B desync=0
+  client 2 ppm=+0 status_ok=0.02s first_audio=4.09s first_marker=10.56s emitted=30 decoded=60 dropped=0/198 trunc=0/0B desync=0
+  logs: /Users/tbuddy/dev/z/ninjam-001/results/truncbase/truncbase_markers.csv, /Users/tbuddy/dev/z/ninjam-001/results/truncbase/truncbase_clock.csv, /Users/tbuddy/dev/z/ninjam-001/results/truncbase/truncbase_summary.txt, /Users/tbuddy/dev/z/ninjam-001/results/truncbase/truncbase_clients.csv, /Users/tbuddy/dev/z/ninjam-001/results/truncbase/truncbase_trunc.csv

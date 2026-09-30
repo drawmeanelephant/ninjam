@@ -91,7 +91,7 @@ class Net_Message
 class Net_Connection
 {
   public:
-    Net_Connection() : m_error(0),m_msgsendpos(-1), m_recvstate(0),m_recvmsg(0),m_delayseq(0),m_lastdue(0),m_lastrxdue(0),m_rxdelayseq(0),m_con(0)
+    Net_Connection() : m_error(0),m_msgsendpos(-1), m_recvstate(0),m_recvmsg(0),m_rxdropdone(0),m_delayseq(0),m_lastdue(0),m_lastrxdue(0),m_rxdelayseq(0),m_con(0)
     {
       SetKeepAlive(0);
     }
@@ -140,6 +140,10 @@ class Net_Connection
 
     int m_recvstate;
     Net_Message *m_recvmsg;
+    // set once the mid-body byte drop (NJCond::rx_byte_drop) has been applied
+    // to the message currently being received, so a message cannot lose
+    // several separate runs of bytes
+    int m_rxdropdone;
 
     // Audio messages held back by the adverse-conditions injector
     // (NJCond). Kept sorted by due time, FIFO within equal due times. Due

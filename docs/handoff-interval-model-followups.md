@@ -8,7 +8,7 @@ all reproducible with one command.
 ## Where things stand
 
 `REPORT.md` characterises NINJAM's interval model under injected faults. The
-harness, the 15 scenarios, the analyzer and the raw logs are all in the repo.
+harness, the 19 scenarios, the analyzer and the raw logs are all in the repo.
 `tools/run_interval_lab.sh` reproduces everything.
 
 The headline results, so you do not have to re-derive them:
@@ -25,6 +25,10 @@ The headline results, so you do not have to re-derive them:
   aligned bracket it to 0.97-1.07 intervals.
 - Message loss and jitter cost **markers, not alignment**. Alignment stays at
   0.03 ms through 10% loss and 40 ms jitter.
+- A **short** audio message (tail missing, framing intact) is accepted silently
+  and costs the rest of its own interval — never more. A **lost** message costs
+  *more*. A **byte dropped mid-message** kills the connection outright, because
+  the length-prefixed framing has no resync.
 - A late joiner syncs in 8.07 s (2.02 intervals) and lands −0.02 ms off the
   session.
 
@@ -98,10 +102,39 @@ Each of these first produced a plausible but false number:
 4. **Detection-rate math.** The denominator double-counted listener
    emissions, printing 198.8%/287.2%. Should be
    `sum(emitted) - emitted[l]`.
+5. **Truncation timing, twice.** The reception-to-playback offset is **one**
+   interval, not two: audio for interval N is received as N closes and played
+   during N+1. Two intervals is emission-to-playback. Attributing damage to
+   `spos + 2*interval` put every gap in the wrong interval.
+6. **Matching a fault to a measured gap.** The gap starts slightly *after* the
+   event, because audio already decoded when the message was cut still plays
+   out of the buffer. Match "a gap beginning at or after the event, inside the
+   interval the event damaged", not "a gap containing the event" — that
+   matched 1 of 28 events and looked like the injection had done nothing.
+7. **A peak trace is not an audio-presence trace.** The emitters are silent
+   between marker bursts, so a remote channel's decoded level is 0 almost
+   everywhere and says nothing about whether audio is flowing. `--steady=AMP`
+   adds a quiet 250 Hz tone for exactly this; calibrate the silence threshold
+   from each channel's own median (the live level comes back ~0.0126 from a
+   0.05 transmit, so a hardcoded threshold is meaningless).
+8. **The mark period floor limits intra-interval resolution.** The lab refuses
+   `--mark-period` below 2.5x the interval, because the marker index is
+   recovered as `floor(heard/period)` and needs the offset to fit inside one
+   period. At a 2 s interval, `--mark-period=6.5` is the useful choice:
+   6500 mod 2000 = 500 puts markers at four distinct offsets inside an
+   interval. Any mark period that is a whole number of intervals puts every
+   marker at offset 0.0 and the intra-interval comparison is worthless.
 
 There is also a latent analyzer crash that was fixed on the drift branch and
 may still be live on `main`: `s.align[s.ks[-1]]` raises `KeyError` when the
 last marker was heard by only one pair.
+
+Two more, both found and fixed on `exp/truncation` because the desync runs are
+the first scenarios that decode no markers at all: the §2 "no data" row built
+**11 cells for a 10-column table** (`IndexError` in `table()`), and the §1
+`interval s` column printed **milliseconds** under an `s` header while its
+no-data branch printed seconds. Add a scenario type that produces no markers and
+both surface immediately.
 
 ## Platform build gotchas (both already fixed, do not "tidy" them)
 
@@ -156,15 +189,43 @@ Keep the caveat honest: the 40 ms jitter result *hints* that added latency
 displaces delivery without moving playout, but that was latency **variation**,
 not a latency **offset**, and 40 ms is not 200 ms. Do not overstate it.
 
-### #23 — model mid-message stream truncation
+### #23 — model mid-message stream truncation — **RESOLVED, and the premise was inverted**
 
-Loss is currently all-or-nothing per `Net_Message`. A real lossy link truncates
-streams mid-message. This is a **measurement gap, not a known bug** — the
-harsher per-message case is already measured, so mid-message truncation is the
-more realistic one and the 72.2% survival at 10% loss is a lower bound.
+Loss is all-or-nothing per `Net_Message`; a real link can also deliver a write
+that arrives short, and a byte stream cut mid-message. Measured (`exp/truncation`,
+REPORT.md §6). The ordering turned out to be the opposite of what this entry
+assumed:
 
-Check `fuzz/` (from #11) before writing new parser coverage; a lot of the
-malformed-input surface may already be covered there.
+- **A short message costs LESS than a lost one.** At the same 5%, dropping whole
+  messages damaged 47 intervals against 27 for cutting 2000 B off the tail, and
+  the worst lost-message gap reached **1.88 intervals** — crossing an interval
+  edge — where no short write exceeded 0.87. So "the harsher per-message case"
+  was the whole-message one after all. The 72.2% survival at 10% loss is a
+  *pessimistic* bound for a link that merely shortens writes.
+- **A short message is undetectable by construction.** `parse` sets
+  `audio_data_len = msg->get_size()-17` with nothing to check it against
+  (`ninjam/mpb.cpp:434`). No error, no counter, session stays up, delay still
+  2.0000 intervals, alignment 0.02 ms.
+- **The damage is bounded by the interval grid.** It runs from the truncation
+  point to the end of the interval it landed in and **never crosses into the
+  next one** — 53 of 53 gaps ended on an interval edge. Each interval's audio is
+  its own Ogg stream, so `VorbisDecoder::DecodeWrote` re-initialises at the
+  boundary. The interval grid is also the error boundary.
+- **Direction decides who pays.** A truncated download is private to the client
+  that received it; a truncated *upload* is forwarded by the server and hits
+  every other participant in the same interval (9 of 11 two-client intervals
+  lost the same emitter index).
+- **A byte dropped mid-message is fatal, not degrading.** The framing is a bare
+  type + 32-bit length with no resync marker, so 8 lost bytes desynchronise
+  everything after them. Affected clients end at `NJC_STATUS_DISCONNECTED`
+  within one 100 ms sample of the drop, with no error string to distinguish
+  corruption from a dropped network. On the uplink the server drops that one
+  user (`code=-1`) and serves the rest.
+
+`fuzz/` was checked first, as instructed: it drives **client→server** bytes into
+the **server** (every seed in `gen_corpus.py` is `MSG_CLIENT_UPLOAD_INTERVAL_*`).
+Nothing exercises a client decoding a damaged *download*, which is why none of
+this was caught earlier. That is where new coverage belongs.
 
 ## Not filed, but worth knowing
 

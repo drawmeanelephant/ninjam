@@ -28,6 +28,11 @@ namespace NJCond
     return p;
   }
 
+  // Inbound truncation, per-thread for the same reason profile() is: what a
+  // connection receives is a property of the thread RUNNING it, which is what
+  // makes a per-participant rate possible at all.
+  static NJCOND_THREAD_LOCAL RxTrunc t_rx_trunc = {0.0, 0, 0.0, 0};
+
   // Receive-side hold for audio messages, in ms. Like profile(), this is
   // per-thread, but it is read by the thread that RUNS the receiving
   // connection, not the sending one: one process receives for every other
@@ -37,7 +42,7 @@ namespace NJCond
 
   static Stats &stats()
   {
-    static NJCOND_THREAD_LOCAL Stats s = {0, 0, 0, 0, 0.0};
+    static NJCOND_THREAD_LOCAL Stats s = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0.0};
     return s;
   }
 
@@ -99,6 +104,14 @@ namespace NJCond
     if ((s=getenv("NJCOND_AUDIO_JITTER_MS"))) p.audio_jitter_ms=atof(s);
 
     if (p.active()) profile() = p;
+
+    RxTrunc rt=t_rx_trunc;
+    if ((s=getenv("NJCOND_AUDIO_TRUNC_PCT"))) rt.trunc_pct=atof(s);
+    if ((s=getenv("NJCOND_AUDIO_TRUNC_BYTES"))) rt.trunc_bytes=atoi(s);
+    if ((s=getenv("NJCOND_RX_DROP_PCT"))) rt.drop_pct=atof(s);
+    if ((s=getenv("NJCOND_RX_DROP_BYTES"))) rt.drop_bytes=atoi(s);
+
+    t_rx_trunc = rt;
   }
 
   double rx_delay_ms()
@@ -109,6 +122,20 @@ namespace NJCond
   void set_rx_delay(double ms)
   {
     t_rx_delay_ms = ms;
+  }
+
+  void set_rx_trunc(double trunc_pct, int trunc_bytes,
+                    double drop_pct, int drop_bytes)
+  {
+    t_rx_trunc.trunc_pct=trunc_pct;
+    t_rx_trunc.trunc_bytes=trunc_bytes;
+    t_rx_trunc.drop_pct=drop_pct;
+    t_rx_trunc.drop_bytes=drop_bytes;
+  }
+
+  const RxTrunc &rx_trunc()
+  {
+    return t_rx_trunc;
   }
 
   // --- internals used by Net_Connection ---------------------------------
@@ -147,5 +174,53 @@ namespace NJCond
 
     if (delay_ms) *delay_ms = d;
     return true;
+  }
+
+  // Decide whether to roll for a truncation of one inbound message. Kept
+  // separate from the two entry points below so both flavours of loss share
+  // one random draw and one set of counters.
+  static bool roll(double pct)
+  {
+    if (pct <= 0.0) return false;
+    return (double)rand() / (double)RAND_MAX * 100.0 < pct;
+  }
+
+  int trunc_cut(int type, int size)
+  {
+    // only a WRITE carries audio; a BEGIN is interval metadata and cutting
+    // its tail would corrupt fields rather than drop samples
+    if (type != MESSAGE_SERVER_DOWNLOAD_INTERVAL_WRITE &&
+        type != MESSAGE_CLIENT_UPLOAD_INTERVAL_WRITE)
+      return 0;
+
+    const RxTrunc &rt=t_rx_trunc;
+    if (!roll(rt.trunc_pct) || rt.trunc_bytes < 1) return 0;
+
+    // never eat the framing: what is being modelled is a short write, not a
+    // header the peer cannot parse. Clamping also keeps a small payload from
+    // turning into the separate case parse() rejects outright.
+    int cut=rt.trunc_bytes;
+    const int payload=size-AUDIO_WRITE_HEADER;
+    if (cut > payload) cut=payload;
+    if (cut < 1) return 0;
+
+    Stats &st=stats();
+    st.audio_truncated++;
+    st.trunc_bytes += (unsigned long)cut;
+    st.trunc_msg_bytes += (unsigned long)size;
+    return cut;
+  }
+
+  int rx_byte_drop(int type)
+  {
+    if (!is_audio_message(type)) return 0;
+
+    const RxTrunc &rt=t_rx_trunc;
+    if (!roll(rt.drop_pct) || rt.drop_bytes < 1) return 0;
+
+    Stats &st=stats();
+    st.rx_dropped++;
+    st.drop_bytes += (unsigned long)rt.drop_bytes;
+    return rt.drop_bytes;
   }
 }

@@ -10,28 +10,34 @@ This is the constant that the interval model contributes; drift is measured
 relative to it. A value near a multiple of the interval is the interval
 structure showing through.
 
-| scenario     | interval s | centre bias ms | min delay | median delay | max delay | median delay / interval |
-|--------------|------------|----------------|-----------|--------------|-----------|-------------------------|
-| baseline     | 4000.00    | 19.99          | 8000.04   | 8000.05      | 8000.07   | 2.0000                  |
-| drift12000   | 4000.00    | 19.99          | 4000.06   | 4000.13      | 7999.99   | 1.0000                  |
-| drift200     | 4000.00    | 19.99          | 8000.04   | 8000.07      | 8000.09   | 2.0000                  |
-| drift3000    | 4000.00    | 19.99          | 4000.06   | 6000.08      | 8000.10   | 1.5000                  |
-| drift4000    | 4000.00    | 19.99          | 4000.06   | 6000.07      | 8000.06   | 1.5000                  |
-| drift50      | 4000.00    | 19.99          | 8000.03   | 8000.06      | 8000.09   | 2.0000                  |
-| drift6000    | 4000.00    | 19.99          | 4000.04   | 4008.59      | 8000.06   | 1.0021                  |
-| drift8000    | 4000.00    | 19.99          | 4000.06   | 8000.01      | 8000.05   | 2.0000                  |
-| interval2s   | 2000.00    | 19.99          | 4000.01   | 4000.02      | 4000.04   | 2.0000                  |
-| interval8s   | 8000.00    | 19.99          | 16000.04  | 16000.05     | 16000.06  | 2.0000                  |
-| jitter       | 4000.00    | 19.99          | 8000.06   | 8000.07      | 8000.09   | 2.0000                  |
-| latejoin     | 4000.00    | 19.99          | 8000.04   | 8000.06      | 8000.07   | 2.0000                  |
-| loss1        | 4000.00    | 19.99          | 8000.03   | 8000.05      | 8000.07   | 2.0000                  |
-| loss10       | 4000.00    | 19.99          | 8000.06   | 8000.09      | 8000.14   | 2.0000                  |
-| loss5        | 4000.00    | 19.99          | 8000.06   | 8000.07      | 8000.09   | 2.0000                  |
-| mark3840     | 4000.00    | 39.99          | 8000.04   | 8000.06      | 8000.10   | 2.0000                  |
-| mark3840iv2s | 2000.00    | 39.99          | 4000.04   | 4000.06      | 4000.10   | 2.0000                  |
-| mark960      | 4000.00    | 9.99           | 8000.05   | 8000.06      | 8000.07   | 2.0000                  |
-| rtt-spread   | 4000.00    | 0.00           | 8000.04   | 8000.05      | 8000.07   | 2.0000                  |
-| rtt100       | 4000.00    | 0.00           | 8000.04   | 8000.05      | 8000.07   | 2.0000                  |
+| scenario     | interval ms | centre bias ms | min delay | median delay | max delay | median delay / interval |
+|--------------|-------------|----------------|-----------|--------------|-----------|-------------------------|
+| baseline     | 4000.00     | 19.99          | 8000.04   | 8000.05      | 8000.07   | 2.0000                  |
+| desync       | 2000.00     | 0.00           | 4000.13   | 4000.13      | 4000.13   | 2.0001                  |
+| desyncup     | 2000.00     | 0.00           | no data   |              |           |                         |
+| drift12000   | 4000.00     | 19.99          | 4000.06   | 4000.13      | 7999.99   | 1.0000                  |
+| drift200     | 4000.00     | 19.99          | 8000.04   | 8000.07      | 8000.09   | 2.0000                  |
+| drift3000    | 4000.00     | 19.99          | 4000.06   | 6000.08      | 8000.10   | 1.5000                  |
+| drift4000    | 4000.00     | 19.99          | 4000.06   | 6000.07      | 8000.06   | 1.5000                  |
+| drift50      | 4000.00     | 19.99          | 8000.03   | 8000.06      | 8000.09   | 2.0000                  |
+| drift6000    | 4000.00     | 19.99          | 4000.04   | 4008.59      | 8000.06   | 1.0021                  |
+| drift8000    | 4000.00     | 19.99          | 4000.06   | 8000.01      | 8000.05   | 2.0000                  |
+| interval2s   | 2000.00     | 19.99          | 4000.01   | 4000.02      | 4000.04   | 2.0000                  |
+| interval8s   | 8000.00     | 19.99          | 16000.04  | 16000.05     | 16000.06  | 2.0000                  |
+| jitter       | 4000.00     | 19.99          | 8000.06   | 8000.07      | 8000.09   | 2.0000                  |
+| latejoin     | 4000.00     | 19.99          | 8000.04   | 8000.06      | 8000.07   | 2.0000                  |
+| loss1        | 4000.00     | 19.99          | 8000.03   | 8000.05      | 8000.07   | 2.0000                  |
+| loss10       | 4000.00     | 19.99          | 8000.06   | 8000.09      | 8000.14   | 2.0000                  |
+| loss5        | 4000.00     | 19.99          | 8000.06   | 8000.07      | 8000.09   | 2.0000                  |
+| mark3840     | 4000.00     | 39.99          | 8000.04   | 8000.06      | 8000.10   | 2.0000                  |
+| mark3840iv2s | 2000.00     | 39.99          | 4000.04   | 4000.06      | 4000.10   | 2.0000                  |
+| mark960      | 4000.00     | 9.99           | 8000.05   | 8000.06      | 8000.07   | 2.0000                  |
+| rtt-spread   | 4000.00     | 0.00           | 8000.04   | 8000.05      | 8000.07   | 2.0000                  |
+| rtt100       | 4000.00     | 0.00           | 8000.04   | 8000.05      | 8000.07   | 2.0000                  |
+| truncbase    | 2000.00     | 0.00           | 4000.08   | 4000.08      | 4000.08   | 2.0000                  |
+| truncdown    | 2000.00     | 0.00           | 4000.05   | 4000.06      | 4000.06   | 2.0000                  |
+| truncloss    | 2000.00     | 0.00           | 4000.07   | 4000.07      | 4000.09   | 2.0000                  |
+| truncup      | 2000.00     | 0.00           | 4000.11   | 4000.11      | 4000.11   | 2.0001                  |
 
 `centre bias ms` is the detector's half-burst centring offset,
 (mark_len-1)/2 samples, already removed from the delays above. It is
@@ -68,6 +74,8 @@ pair with the largest |drift|. Predicted drift for a pair is
 | scenario     | markers | align first | align last | align max | align mod iv | max slips | worst pair | drift ms/min | predicted |
 |--------------|---------|-------------|------------|-----------|--------------|-----------|------------|--------------|-----------|
 | baseline     | 54      | 0.03        | 0.03       | 0.03      | 0.00         | 0         | 0<-1       | 0.00         | 0.00      |
+| desync       | no data |             |            |           |              |           |            |              |           |
+| desyncup     | no data |             |            |           |              |           |            |              |           |
 | drift12000   | 55      | 4000.00     | 7973.54    | 7973.75   | 52.35        | 2         | 0<-2       | -1120.24     | 720.00    |
 | drift200     | 54      | 0.03        | 0.09       | 0.18      | 0.17         | 0         | 2<-0       | -0.00        | -12.00    |
 | drift3000    | 54      | 4000.12     | 4000.16    | 4000.16   | 0.19         | 0         | 1<-2       | 0.01         | 360.00    |
@@ -87,6 +95,10 @@ pair with the largest |drift|. Predicted drift for a pair is
 | mark960      | 15      | 0.02        | 0.02       | 0.02      | 0.00         | 0         | 0<-2       | -0.01        | 0.00      |
 | rtt-spread   | 15      | 0.03        | 0.03       | 0.03      | 0.00         | 0         | 2<-1       | 0.01         | 0.00      |
 | rtt100       | 15      | 0.03        | 0.03       | 0.03      | 0.00         | 0         | 2<-1       | 0.01         | 0.00      |
+| truncbase    | 30      | 0.00        | 0.02       | 0.02      | 0.02         | 0         | 2<-1       | 0.00         | 0.00      |
+| truncdown    | 30      | 0.00        | 0.02       | 0.02      | 0.02         | 0         | 0<-2       | 0.02         | 0.00      |
+| truncloss    | 30      | 0.00        | 0.02       | 0.02      | 0.02         | 0         | 0<-1       | 0.00         | 0.00      |
+| truncup      | 30      | 0.00        | 0.02       | 0.02      | 0.02         | 0         | 1<-2       | -0.01        | 0.00      |
 
 `align max` is the raw figure: how far apart two clients are, whole
 intervals included. `align mod iv` is the same figure with whole-interval
@@ -298,6 +310,50 @@ see REPORT.md.
 | 2 hears 0 | +0 / +0 | 8000.04 | 8000.04  | 8000.04   | 0.00   | 0.01         | 0     | 0.00         | 0.00        |
 | 2 hears 1 | +0 / +0 | 8000.07 | 8000.07  | 8000.07   | 0.00   | 0.01         | 0     | 0.00         | 0.00        |
 
+### truncbase
+
+| pair      | ppm l/e | delay   | err @k=1 | err @k=30 | change | drift ms/min | slips | resid @first | resid @last |
+|-----------|---------|---------|----------|-----------|--------|--------------|-------|--------------|-------------|
+| 0 hears 1 | +0 / +0 | 4000.08 | 4000.15  | 4000.15   | -0.00  | 0.00         | 0     | 0.07         | 0.07        |
+| 0 hears 2 | +0 / +0 | 4000.08 | 4000.15  | 4000.13   | -0.02  | 0.00         | 0     | 0.07         | 0.05        |
+| 1 hears 0 | +0 / +0 | 4000.08 | 4000.15  | 4000.14   | -0.02  | 0.00         | 0     | 0.07         | 0.06        |
+| 1 hears 2 | +0 / +0 | 4000.08 | 4000.15  | 4000.13   | -0.02  | 0.00         | 0     | 0.07         | 0.05        |
+| 2 hears 0 | +0 / +0 | 4000.08 | 4000.15  | 4000.13   | -0.01  | 0.00         | 0     | 0.07         | 0.05        |
+| 2 hears 1 | +0 / +0 | 4000.08 | 4000.15  | 4000.14   | -0.01  | 0.00         | 0     | 0.07         | 0.07        |
+
+### truncdown
+
+| pair      | ppm l/e | delay   | err @k=1 | err @k=30 | change | drift ms/min | slips | resid @first | resid @last |
+|-----------|---------|---------|----------|-----------|--------|--------------|-------|--------------|-------------|
+| 0 hears 1 | +0 / +0 | 4000.06 | 4000.01  | 4000.09   | 0.08   | 0.01         | 0     | -0.06        | 0.02        |
+| 0 hears 2 | +0 / +0 | 4000.06 | 4000.00  | 4000.07   | 0.07   | 0.02         | 0     | -0.06        | 0.01        |
+| 1 hears 0 | +0 / +0 | 4000.05 | 4000.01  | 4000.07   | 0.07   | 0.01         | 0     | -0.05        | 0.02        |
+| 1 hears 2 | +0 / +0 | 4000.05 | 4000.00  | 4000.07   | 0.07   | 0.01         | 0     | -0.05        | 0.02        |
+| 2 hears 0 | +0 / +0 | 4000.05 | 4000.00  | 4000.07   | 0.07   | 0.01         | 0     | -0.05        | 0.02        |
+| 2 hears 1 | +0 / +0 | 4000.06 | 4000.01  | 4000.08   | 0.08   | 0.01         | 0     | -0.06        | 0.02        |
+
+### truncloss
+
+| pair      | ppm l/e | delay   | err @k=1 | err @k=30 | change | drift ms/min | slips | resid @first | resid @last |
+|-----------|---------|---------|----------|-----------|--------|--------------|-------|--------------|-------------|
+| 0 hears 1 | +0 / +0 | 4000.09 | 4000.09  | 4000.09   | -0.01  | 0.00         | 0     | 0.01         | 0.00        |
+| 0 hears 2 | +0 / +0 | 4000.07 | 4000.09  | 4000.07   | -0.02  | 0.00         | 0     | 0.01         | -0.01       |
+| 1 hears 0 | +0 / +0 | 4000.07 | 4000.09  | 4000.07   | -0.02  | 0.00         | 0     | 0.02         | 0.00        |
+| 1 hears 2 | +0 / +0 | 4000.08 | 4000.09  | 4000.07   | -0.02  | -0.00        | 0     | 0.01         | -0.01       |
+| 2 hears 0 | +0 / +0 | 4000.07 | 4000.09  | 4000.07   | -0.01  | 0.00         | 0     | 0.01         | -0.00       |
+| 2 hears 1 | +0 / +0 | 4000.07 | 4000.09  | 4000.08   | -0.01  | 0.00         | 0     | 0.02         | 0.01        |
+
+### truncup
+
+| pair      | ppm l/e | delay   | err @k=1 | err @k=30 | change | drift ms/min | slips | resid @first | resid @last |
+|-----------|---------|---------|----------|-----------|--------|--------------|-------|--------------|-------------|
+| 0 hears 1 | +0 / +0 | 4000.11 | 4000.11  | 4000.02   | -0.09  | -0.01        | 0     | 0.00         | -0.08       |
+| 0 hears 2 | +0 / +0 | 4000.11 | 4000.11  | 4000.01   | -0.10  | -0.01        | 0     | -0.00        | -0.10       |
+| 1 hears 0 | +0 / +0 | 4000.11 | 4000.11  | 4000.01   | -0.10  | -0.01        | 0     | 0.00         | -0.10       |
+| 1 hears 2 | +0 / +0 | 4000.11 | 4000.11  | 4000.01   | -0.10  | -0.01        | 0     | 0.00         | -0.10       |
+| 2 hears 0 | +0 / +0 | 4000.11 | 4000.11  | 4000.01   | -0.10  | -0.01        | 0     | 0.00         | -0.10       |
+| 2 hears 1 | +0 / +0 | 4000.11 | 4000.11  | 4000.02   | -0.09  | -0.01        | 0     | 0.00         | -0.09       |
+
 `resid` is the error from the pair's own median delay, wrapped into
 +/- half an interval: the real skew. `change` is the raw figure, so a
 large `change` with a small `resid` is a whole-interval slip, not drift.
@@ -311,6 +367,8 @@ stream, so TCP would turn a dropped packet into latency rather than loss.
 | scenario     | loss up/down | jitter up/down ms | markers emitted | expected decodes | decoded | detection rate | audio msgs seen | dropped | actual drop rate | suspect rows |
 |--------------|--------------|-------------------|-----------------|------------------|---------|----------------|-----------------|---------|------------------|--------------|
 | baseline     | 0% / 0%      | 0 / 0             | 162             | 324              | 324     | 100.0%         | 2952            | 0       | 0.00%            | 0            |
+| desync       | 0% / 0%      | 0 / 0             | 90              | 180              | 1       | 0.6%           | 208             | 0       | 0.00%            | 0            |
+| desyncup     | 0% / 0%      | 0 / 0             | 90              | 180              | 0       | 0.0%           | 78              | 0       | 0.00%            | 0            |
 | drift12000   | 0% / 0%      | 0 / 0             | 163             | 326              | 321     | 98.5%          | 2958            | 0       | 0.00%            | 0            |
 | drift200     | 0% / 0%      | 0 / 0             | 162             | 324              | 324     | 100.0%         | 2952            | 0       | 0.00%            | 0            |
 | drift3000    | 0% / 0%      | 0 / 0             | 163             | 326              | 324     | 99.4%          | 2958            | 0       | 0.00%            | 0            |
@@ -330,6 +388,10 @@ stream, so TCP would turn a dropped packet into latency rather than loss.
 | mark960      | 0% / 0%      | 0 / 0             | 48              | 96               | 90      | 93.8%          | 882             | 0       | 0.00%            | 0            |
 | rtt-spread   | 0% / 0%      | 0 / 0             | 48              | 96               | 90      | 93.8%          | 294             | 0       | 0.00%            | 0            |
 | rtt100       | 0% / 0%      | 0 / 0             | 48              | 96               | 90      | 93.8%          | 294             | 0       | 0.00%            | 0            |
+| truncbase    | 0% / 0%      | 0 / 0             | 90              | 180              | 180     | 100.0%         | 594             | 0       | 0.00%            | 0            |
+| truncdown    | 0% / 0%      | 0 / 0             | 90              | 180              | 174     | 96.7%          | 594             | 0       | 0.00%            | 0            |
+| truncloss    | 0% / 5%      | 0 / 0             | 90              | 180              | 166     | 92.2%          | 594             | 0       | 0.00%            | 0            |
+| truncup      | 0% / 0%      | 0 / 0             | 90              | 180              | 178     | 98.9%          | 594             | 0       | 0.00%            | 0            |
 
 `expected decodes` counts marker emissions weighted by the number of
 other clients that should hear each one, so the detection rate is a
@@ -352,6 +414,8 @@ interval rather than being slightly out of phase.
 | scenario     | pairs | samples | median |skew| | max |skew| raw | p99 wrapped | max wrapped | worst pair | slip rate | drift ms/min |
 |--------------|-------|---------|---------------|----------------|-------------|-------------|------------|-----------|--------------|
 | baseline     | 3     | 19485   | 0.00          | 0.00           | 0.00        | 0.00        | 0-1        | 0.00%     | 0.00         |
+| desync       | 3     | 5850    | 0.25          | 1999.44        | 0.79        | 0.81        | 0-2        | 1.50%     | 1.04         |
+| desyncup     | 3     | 5859    | 0.31          | 1999.73        | 0.62        | 0.71        | 0-1        | 0.48%     | -17.90       |
 | drift12000   | 3     | 19488   | 0.29          | 3999.98        | 0.90        | 0.98        | 0-1        | 4.08%     | 2.53         |
 | drift200     | 3     | 18510   | 0.29          | 3999.98        | 0.90        | 0.98        | 0-1        | 3.70%     | 2.81         |
 | drift3000    | 3     | 19482   | 0.29          | 3999.98        | 0.90        | 0.98        | 0-1        | 4.01%     | 0.40         |
@@ -371,6 +435,10 @@ interval rather than being slightly out of phase.
 | mark960      | 3     | 5916    | 0.00          | 0.00           | 0.00        | 0.00        | 0-1        | 0.00%     | 0.00         |
 | rtt-spread   | 3     | 5907    | 0.00          | 0.00           | 0.00        | 0.00        | 0-1        | 0.00%     | 0.00         |
 | rtt100       | 3     | 5904    | 0.00          | 0.00           | 0.00        | 0.00        | 0-1        | 0.00%     | 0.00         |
+| truncbase    | 3     | 5868    | 0.00          | 0.00           | 0.00        | 0.00        | 0-1        | 0.00%     | 0.00         |
+| truncdown    | 3     | 5865    | 0.00          | 0.00           | 0.00        | 0.00        | 0-1        | 0.00%     | 0.00         |
+| truncloss    | 3     | 5865    | 0.00          | 0.00           | 0.00        | 0.00        | 0-1        | 0.00%     | 0.00         |
+| truncup      | 3     | 5868    | 0.00          | 0.00           | 0.00        | 0.00        | 0-1        | 0.00%     | 0.00         |
 
 ## 6. Join in progress
 
@@ -465,6 +533,8 @@ the comparison -- they carry a whole-interval startup offset (see
 | scenario     | marker rows | unique markers | shadow rows | clock rows | markers skipped at emit | min peak | median peak | max peak |
 |--------------|-------------|----------------|-------------|------------|-------------------------|----------|-------------|----------|
 | baseline     | 324         | 324            | 0           | 19485      | 0                       | 0.693    | 0.707       | 0.721    |
+| desync       | 1           | 1              | 0           | 5850       | 0                       | 0.839    | 0.839       | 0.839    |
+| desyncup     | 0           | 0              | 0           | 5859       | 0                       | n/a      | n/a         | n/a      |
 | drift12000   | 322         | 321            | 1           | 19488      | 0                       | 0.502    | 0.860       | 1.000    |
 | drift200     | 324         | 324            | 0           | 18510      | 0                       | 0.693    | 0.707       | 0.721    |
 | drift3000    | 324         | 324            | 0           | 19482      | 0                       | 0.693    | 0.716       | 1.000    |
@@ -484,6 +554,10 @@ the comparison -- they carry a whole-interval startup offset (see
 | mark960      | 90          | 90             | 0           | 5916       | 0                       | 0.693    | 0.707       | 0.721    |
 | rtt-spread   | 90          | 90             | 0           | 5907       | 0                       | 0.693    | 0.707       | 0.721    |
 | rtt100       | 90          | 90             | 0           | 5904       | 0                       | 0.693    | 0.707       | 0.721    |
+| truncbase    | 180         | 180            | 0           | 5868       | 0                       | 0.626    | 0.641       | 0.653    |
+| truncdown    | 174         | 174            | 0           | 5865       | 0                       | 0.626    | 0.645       | 0.839    |
+| truncloss    | 166         | 166            | 0           | 5865       | 0                       | 0.626    | 0.646       | 0.839    |
+| truncup      | 178         | 178            | 0           | 5868       | 0                       | 0.626    | 0.645       | 0.838    |
 
 `markers skipped at emit` should be 0: a non-zero value means a marker was
 scheduled into a gap in the client's own sample stream and never sent.
@@ -499,4 +573,97 @@ every marker throws a weak shadow roughly one burst length behind itself.
 They are excluded above -- the strongest hit wins -- and they are not
 evidence of anything NINJAM did. The detector now suppresses them at
 source, so re-running with the current code gives 0 here.
+
+## 9. Truncated messages and truncated byte streams
+
+Loss of a whole audio message is one way a write fails to arrive intact.
+The other is that it arrives SHORT -- intact as a message, with the tail
+of its payload gone -- which nothing detects, because a message's payload
+length is whatever the message says it is
+(`mpb_server_download_interval_write::parse` takes `audio_data_len` from
+the message size and has nothing to check it against). A third case is
+the byte stream itself being cut mid-message. `--steady` puts a quiet
+constant tone on every channel so a remote channel's decoded level is a
+continuous measure of whether its audio is flowing; the runs below are
+measured gaps in that level, at the clock probe's 10 Hz.
+
+| scenario  | client | final status | markers heard | msgs truncated | bytes cut | msgs byte-dropped | bytes dropped |
+|-----------|--------|--------------|---------------|----------------|-----------|-------------------|---------------|
+| desync    | 0      | -3           | 0/30          | 0              | 0         | 1                 | 8             |
+| desync    | 1      | -3           | 0/30          | 0              | 0         | 1                 | 8             |
+| desync    | 2      | 0            | 1/30          | 0              | 0         | 0                 | 0             |
+| desyncup  | 0      | -3           | 0/30          | 0              | 0         | 0                 | 0             |
+| desyncup  | 1      | -3           | 0/30          | 0              | 0         | 0                 | 0             |
+| desyncup  | 2      | -3           | 0/30          | 0              | 0         | 0                 | 0             |
+| truncbase | 0      | 0            | 60/30         | 0              | 0         | 0                 | 0             |
+| truncbase | 1      | 0            | 60/30         | 0              | 0         | 0                 | 0             |
+| truncbase | 2      | 0            | 60/30         | 0              | 0         | 0                 | 0             |
+| truncdown | 0      | 0            | 57/30         | 11             | 22000     | 0                 | 0             |
+| truncdown | 1      | 0            | 58/30         | 8              | 16000     | 0                 | 0             |
+| truncdown | 2      | 0            | 59/30         | 9              | 18000     | 0                 | 0             |
+| truncloss | 0      | 0            | 52/30         | 0              | 0         | 0                 | 0             |
+| truncloss | 1      | 0            | 57/30         | 0              | 0         | 0                 | 0             |
+| truncloss | 2      | 0            | 57/30         | 0              | 0         | 0                 | 0             |
+| truncup   | 0      | 0            | 59/30         | 0              | 0         | 0                 | 0             |
+| truncup   | 1      | 0            | 59/30         | 0              | 0         | 0                 | 0             |
+| truncup   | 2      | 0            | 60/30         | 0              | 0         | 0                 | 0             |
+
+`final status` is the NJClient status at teardown: 0 is still healthy.
+A negative value killed the session instead of degrading it.
+`markers heard` is decodes over markers emitted by the other clients.
+
+| scenario  | gaps | events recorded | events matched to a gap | median start in interval ms | min gap ms | median gap ms | max gap ms | median gap / interval | max gap / interval | gaps ending on an interval edge | median level in gap | median live level |
+|-----------|------|-----------------|-------------------------|-----------------------------|------------|---------------|------------|-----------------------|--------------------|---------------------------------|---------------------|-------------------|
+| desync    | 0    | 2               | 0                       | n/a                         | n/a        | n/a           | n/a        | n/a                   | n/a                | n/a                             | n/a                 | n/a               |
+| desyncup  | 0    | 0               | 0                       | n/a                         | n/a        | n/a           | n/a        | n/a                   | n/a                | n/a                             | n/a                 | n/a               |
+| truncbase | 0    | 0               | 0                       | n/a                         | n/a        | n/a           | n/a        | n/a                   | n/a                | n/a                             | n/a                 | n/a               |
+| truncdown | 27   | 28              | 27                      | 266.00                      | 1529.00    | 1646.00       | 1741.00    | 0.82                  | 0.87               | 27/27                           | 0.00428             | 0.01265           |
+| truncloss | 47   | 0               | 0                       | 275.00                      | 1529.00    | 1636.00       | 3767.00    | 0.82                  | 1.88               | 47/47                           | 0.00399             | 0.01265           |
+| truncup   | 26   | 0               | 0                       | 251.00                      | 1629.00    | 1732.00       | 1745.00    | 0.87                  | 0.87               | 26/26                           | 0.00439             | 0.01265           |
+
+`start in interval` is how far into its interval a channel's audio
+stopped. Damage to a write is heard one interval after the message
+arrives, since audio for interval N is received as N closes and
+played during N+1; audio already decoded when the message was cut
+still plays out, so the gap starts slightly after the event.
+
+`max gap / interval` is the bleed test. A gap reaching two or more
+intervals would mean a damaged stream carried into the next one, or
+that the session died. The column is the longest gap anywhere in the
+run, so a value below 1.0 means no gap ever crossed an interval
+boundary, and a large one is a killed session rather than a gap.
+
+`median level in gap` against `median live level` is what the decoder
+produced while the stream was damaged, next to what the same channel
+carries when it is healthy. A decoder that emitted noise, or that
+resynchronised onto garbage, would put the damaged level near the live
+one. The control row is the check on this: with no damage injected, no
+sample of any channel ever falls below the threshold at all, so the
+two states really are distinct rather than a threshold artefact.
+
+`events recorded` is 0 for the server-side rows on purpose: the
+injector is on the server's receive thread and the client keeps no
+record of it, so only the gap shows that anything happened.
+
+| scenario  | intervals with a gap | only 1 client affected | 2 clients affected | 3 clients affected | 2+ clients, same emitter index |
+|-----------|----------------------|------------------------|--------------------|--------------------|--------------------------------|
+| desync    | 0                    | 0                      | 0                  | 0                  | 0                              |
+| desyncup  | 0                    | 0                      | 0                  | 0                  | 0                              |
+| truncbase | 0                    | 0                      | 0                  | 0                  | 0                              |
+| truncdown | 23                   | 19                     | 4                  | 0                  | 1                              |
+| truncloss | 38                   | 31                     | 7                  | 0                  | 3                              |
+| truncup   | 12                   | 0                      | 11                 | 1                  | 9                              |
+
+Truncating what a client RECEIVES damages that client alone. Truncating
+on the server's receive thread damages an UPLOAD, which the server then
+forwards, so one damaged write costs every other participant the same
+interval at the same moment. The last column is the check: in the
+server-side row the clients that lost audio in the same interval lost
+it on the SAME emitter index, which two independent rolls would not
+reproduce. A downlink truncation is confined to one client by
+construction, so any interval with two clients affected there is two
+rolls landing together by chance.
+
+`truncloss` is the comparison for scale: the same number of messages
+lost whole rather than shortened.
 
