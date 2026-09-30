@@ -21,8 +21,11 @@ The headline results, so you do not have to re-derive them:
 - A client does not slide off the grid under clock drift. Its error stays
   pinned to a whole number of intervals and then jumps. The threshold is a
   **product**: a pair slips when accumulated relative clock error reaches one
-  whole interval, i.e. `ppm_rel = interval / duration`. Nine pairs that started
-  aligned bracket it to 0.97-1.07 intervals.
+  whole interval, i.e. `ppm_rel = 1e6 * interval_s / duration_s`. Nine pairs
+  that started aligned bracket it to 0.97-1.07 intervals at a 4 s interval,
+  and repeating the ladder at 2 s and 8 s shows the ppm threshold doubling with
+  the tempo ([3000, 3953] / [6000, 7809] / [12000, 15748] ppm) — so it is the
+  interval count that is fixed, not the drift rate. REPORT.md §2.1-2.2.
 - Message loss and jitter cost **markers, not alignment**. Alignment stays at
   0.03 ms through 10% loss and 40 ms jitter.
 - A **short** audio message (tail missing, framing intact) is accepted silently

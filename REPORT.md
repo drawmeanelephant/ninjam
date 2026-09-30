@@ -28,8 +28,9 @@ wall time is about 145 minutes, dominated by the eight 11-minute drift runs.
 | where it does break: +/-8000 ppm, 11 min | alignment jumps to **7967 ms**, in **2 whole-interval slips**; residual modulo one interval **49.89 ms** |
 | **slip threshold** | a pair slips when accumulated relative clock error reaches **one whole interval** (see §2.1) |
 | slip threshold, 660 s at a 4 s interval | measured boundary **[6000, 8000] ppm** vs predicted **6061 ppm**; 9 pairs starting aligned bracket it to **0.97-1.07 intervals** (1 outlier at 1.19 from a dropped-marker gap) |
-| slip threshold in usable form | `ppm_rel = interval / duration` = **250 ppm per minute** of session at a 4 s interval |
+| slip threshold in usable form | `ppm_rel = 1e6 * interval_s / duration_s` = **66,700 ppm per minute** of session at a 4 s interval, so 6,670 ppm for a 10-minute jam and 1,110 ppm for an hour |
 | largest accumulated error that did **not** slip / smallest that did | **0.99 iv / 1.32 iv**, 18 pairs, **no exceptions** |
+| does the threshold scale with the interval, or is it a fixed drift rate? | **it scales with the interval.** Measured boundary **[3000, 3953] / [6000, 7809] / [12000, 15748] ppm** at 2 / 4 / 8 s, against 3030 / 6061 / 12121 predicted: it doubles with the tempo (§2.2) |
 | alignment error at 1% / 5% / 10% bidirectional message loss | **0.03 / 0.03 / 0.03 ms** - unaffected |
 | markers still decoded at 1% / 5% / 10% loss | **87.5% / 84.7% / 72.2%** |
 | markers still decoded at 40 ms injected jitter | nominally 91.7%; under correct window accounting **100%** - nothing is lost (§4) |
@@ -232,17 +233,27 @@ file by `tools/verify_report_brackets.py`, which fails if the prose and the
 tables disagree.
 
 **The practical form of the result.** For a session of duration `T` at interval
-`L`, a client pair slips when
+`L`, a client pair slips when the relative clock error accumulated over the
+session reaches one whole interval:
 
-    ppm_rel_threshold  =  L / T
+    ppm_rel_threshold  =  1e6 * L_s / T_s        ( = 1000 * L_ms / T_s )
 
-For a 4 s interval that is 250 ppm per minute of session: a 10-minute jam needs
-2500 ppm relative to break, an hour needs 67 ppm. The measured boundary for the
-660 s runs is bracketed to **[6000, 8000] ppm** against a predicted 6061 ppm.
-A consumer audio interface at 20 ppm would take about 2.8 hours to slip one
-interval against a perfect reference, so for realistic hardware this is not a
-failure mode - which is presumably why the interval model has survived as long
-as it has.
+The one number to check this against is the measured one: at a 4 s interval and
+a 660 s run it gives 6061 ppm, and the measured boundary is bracketed to
+**[6000, 8000] ppm**. At a 4 s interval that is 66,700 ppm per minute of
+session, so a 10-minute jam needs 6,670 ppm relative to break and an hour
+needs 1,110 ppm. A consumer audio interface at 20 ppm needs about 55 hours -
+2.3 days - to slip one interval against a perfect reference, so for realistic
+hardware this is not a failure mode, which is presumably why the interval
+model has survived as long as it has.
+
+(Those worked figures were wrong by more than an order of magnitude in the
+first draft of this section, which quoted 2500 ppm for ten minutes and 2.8
+hours for a 20 ppm interface. Both are self-refuting against the formula
+printed above them: 2500 ppm over ten minutes accumulates 1.5 s, which is 0.37
+of a 4 s interval and cannot break anything, and 20 ppm for 2.8 h accumulates
+0.2 s. They are replaced by the arithmetic above, anchored on the measured
+660 s / 4 s boundary so it can be checked in one step.)
 
 **This contradicts the design assumed in issue #20**, which proposed that run
 durations "scale inversely with ppm". That would hold accumulated drift roughly
@@ -251,6 +262,85 @@ boundary. Holding duration *fixed* and stepping ppm is what walks the
 accumulated error across the threshold, and it is 4x cheaper here. The clock
 probe still cannot count slips, as #20 warns; the count above comes from the
 marker trace, via a new `slip_t` field in the analyzer.
+
+### 2.2 The threshold is in intervals, not in ppm
+
+§2.1 leaves one of issue #20's two questions open: is the threshold one whole
+interval of accumulated error, so that the *ppm* at which it happens scales
+with the interval, or is it an absolute drift rate that does not move when the
+tempo does? **It scales with the interval.**
+
+The 4 s ladder above cannot answer this, which is why it was missed: at a
+fixed 660 s both readings predict the same number, 6061 ppm. The two only
+diverge if the interval is changed. So the ladder was repeated at 2 s and 8 s
+(`drift2000iv2s` .. `drift4000iv2s`, `drift6000iv8s` .. `drift12000iv8s`, all
+660 s, same `0:+X:-X` shape), choosing rungs that put the two readings on
+opposite sides of the boundary:
+
+| interval | runs | pairs that slipped | measured threshold | predicted `L / T` | largest error with no slip | smallest error with a slip |
+|----------|------|--------------------|--------------------|-------------------|---------------------------|---------------------------|
+| 2 s | 3 | 7 | **[3000, 3953] ppm** | 3030 ppm | 0.99 iv (3000 ppm) | 0.97 iv (8000 ppm) |
+| 4 s | 7 | 9 | **[6000, 7809] ppm** | 6061 ppm | 0.99 iv (6000 ppm) | 0.97 iv (24000 ppm) |
+| 8 s | 3 | 2 | **[12000, 15748] ppm** | 12121 ppm | 0.99 iv (12000 ppm) | 0.98 iv (16000 ppm) |
+
+Each measured boundary contains the predicted one, and the boundaries double
+along with the interval. Per-pair brackets at the two new tempos, on the same
+terms as the §2.1 table:
+
+| scenario | pair | ppm rel | last aligned | lower bound | first slipped | upper bound | interval ms |
+|----------|------|---------|--------------|-------------|----------------|-------------|-------------|
+| drift2000iv2s | 1<-2 | +4000 | t=495.1 | **0.99 iv** | t=509.0 | 1.02 iv | 2000 |
+| drift3000iv2s | 1<-2 | +6000 | t=327.1 | **0.98 iv** | t=341.0 | 1.02 iv | 2000 |
+| drift4000iv2s | 0<-1 | -4000 | t=496.1 | **0.99 iv** | t=506.1 | 1.01 iv | 2000 |
+| drift4000iv2s | 0<-2 | +4000 | t=496.1 | **0.99 iv** | t=510.1 | 1.02 iv | 2000 |
+| drift4000iv2s | 1<-0 | +4000 | t=494.1 | **0.99 iv** | t=508.0 | 1.02 iv | 2000 |
+| drift4000iv2s | 1<-2 | +8000 | t=243.1 | **0.97 iv** | t=257.0 | 1.03 iv | 2000 |
+| drift4000iv2s | 2<-0 | -4000 | t=498.1 | **1.00 iv** | t=508.1 | 1.02 iv | 2000 |
+| drift8000iv8s | 1<-2 | +16000 | t=492.1 | **0.98 iv** | t=519.9 | 1.04 iv | 8000 |
+| drift12000iv8s | 1<-2 | +24000 | t=332.1 | **1.00 iv** | t=359.7 | 1.08 iv | 8000 |
+
+These nine pairs, with the nine at 4 s in §2.1, bracket the threshold to
+**0.97-1.08 intervals** at the two new tempos and 0.97-1.19 over all eighteen
+(the 1.19 being the §2.1 dropped-marker outlier). So the quantity that does
+not depend on the tempo is the interval count, and the ppm figure is just that
+count divided by the run length.
+
+**The single cleanest demonstration needs one run at each of two tempos.**
+`drift12000` and `drift12000iv8s` inject exactly the same +/-12000 ppm. Over
+660 s that is 7.92 s of accumulated relative error in both. At a 4 s interval
+that is **1.98 intervals**, and all three pairs that started aligned slip -
+each reaching a full two intervals from where it started, one of them back at
+zero again by the end. At an 8 s interval the same error is **0.99 intervals**
+and not one of them slips. Same drift, same duration, same clients, opposite
+outcome, decided entirely by the interval length. A fixed drift rate would
+have given the same answer at both tempos.
+
+Two honest caveats on the new runs:
+
+- **The 1.08 upper bound is a dropped marker, not a disagreement.** In
+  `drift12000iv8s 1<-2` the marker k=17 never arrives, so the bracket spans
+  27.7 s instead of the 20 s grid (`drift8000iv8s 1<-2` drops k=25 the same
+  way, for its 1.04). This is the §2.1 dropped-marker artefact reproduced at
+  another tempo, and it is why a single-marker reading is never used as the
+  threshold.
+- **A `2<-1` pair starts a whole interval off in both 2 s runs** (t=2000.06 ms
+  where the baseline is 4000), so it is the §2.1 second-crossing case and is
+  excluded from the table above:
+
+| scenario | pair | ppm rel | last aligned | lower bound | first slipped | upper bound | interval ms |
+|----------|------|---------|--------------|-------------|----------------|-------------|-------------|
+| drift4000iv2s | 2<-1 | -8000 | t=496.0 | 1.98 iv | t=506.1 | 2.02 iv | 2000 |
+
+  which is the same one-interval rule read from one interval further along.
+
+One incidental result worth recording against §10: the startup offset of
+[#25](https://github.com/drawmeanelephant/ninjam/issues/25) is **not** specific
+to a 4 s tempo or to 3000 ppm - it is in **all six** of the new runs, at both
+new tempos and every offset tried. How many pairs get it does vary with the
+tempo (3 of 6 at 8 s, 1-2 of 6 at 2 s), but `2<-1` is offset in every single
+run, and at 4 s and 8 s the offset pairs are the same three (`0<-1`, `2<-0`,
+`2<-1`) every time. It looks like a property of the session start-up and of
+which client that is, not of the interval or of the injected error.
 
 ## 3. Message loss costs markers, not alignment
 
@@ -614,13 +704,18 @@ listeners' answers to the same event - pairwise, never absolute.
 
 Each of these has a tracking issue.
 
-- **Where exactly does the slip threshold sit?** Answered in §2.1: a pair slips
-  when accumulated relative clock error reaches one whole interval, i.e.
-  `ppm_rel = L / T`. Measured boundary for 660 s at a 4 s interval is
-  [6000, 8000] ppm against a predicted 6061 ppm. Nine pairs that started
-  aligned bracket the threshold to 0.97-1.07 intervals. The issue's suggested
-  design (durations scaling inversely with ppm) was the wrong way round and
-  would have measured the same point repeatedly.
+- ~~**Where exactly does the slip threshold sit?**~~ **Fully answered, both
+  halves.** A pair slips when accumulated relative clock error reaches one
+  whole interval, i.e. `ppm_rel = 1e6 * L_s / T_s` (§2.1). Measured boundary
+  for 660 s at a 4 s interval is [6000, 8000] ppm against a predicted
+  6061 ppm, and nine pairs that started aligned bracket the threshold to
+  0.97-1.07 intervals. The second half of the issue - is that one interval, or
+  an absolute drift rate - needed the tempo varied, because at 4 s both
+  readings predict the same ppm: the ladder repeated at 2 s and 8 s brackets
+  the threshold to [3000, 3953] and [12000, 15748] ppm, so it scales with the
+  interval and is not a fixed rate (§2.2). The issue's suggested design
+  (durations scaling inversely with ppm) was the wrong way round and would have
+  measured the same point repeatedly.
   [#20](https://github.com/drawmeanelephant/ninjam/issues/20)
 - ~~**The 20 ms residual is attributed to codec and loopback latency but not
   decomposed.**~~ **Resolved, and the attribution was wrong.** It is the
@@ -665,7 +760,11 @@ Each of these has a tracking issue.
   8020 ms on their *very first* marker - a full interval of misalignment
   present at t=0, before a millisecond of clock error has built up. It appears
   at 3000 ppm and above and not at 200 ppm or below, and which pairs get it
-  is not a simple function of the sign of the offset. The most likely cause is
+  is not a simple function of the sign of the offset. §2.2 extends this to the
+  other two tempos, where it is present in every run: 3 of 6 pairs at 8 s and
+  1-2 of 6 at 2 s, with `2<-1` offset every time, so it is a property of the
+  session start-up rather than of the interval or of the injected error. The
+  most likely cause is
   the startup transient: a client whose sample counter runs fast crosses an
   extra interval boundary while the session is still coming up, and the
   interval model has no way to express a fractional position, so the error
