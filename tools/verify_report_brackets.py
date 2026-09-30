@@ -39,7 +39,11 @@ def main():
     report = open(REPORT).read()
     report_rows = {}
     for line in report.splitlines():
-        m = re.match(r"^\| (drift\d+|baseline) \| (\d)<-(\d) \|", line)
+        # drift< ppm> and drift< ppm>iv<N>s both name a drift scenario: the
+        # suffix marks the interval the run was made at, which is what section
+        # 2.2 compares. The bracket check has to cover the tempo variants too,
+        # or adding a rung at another interval silently escapes verification.
+        m = re.match(r"^\| (drift\d+(?:iv\d+s)?|baseline) \| (\d)<-(\d) \|", line)
         if m:
             # A scenario/pair can appear in more than one table (the slip/no-slip
             # ladder and the bracket table). Keep the row that actually carries
