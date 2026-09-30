@@ -1,0 +1,5 @@
+tag=desyncup duration=200.0s markers=0 clock_rows=5859 trunc_rows=0
+  client 0 ppm=+0 status_ok=0.02s first_audio=-1.00s first_marker=-1.00s emitted=30 decoded=0 dropped=0/2 trunc=0/0B desync=0
+  client 1 ppm=+0 status_ok=0.02s first_audio=4.09s first_marker=-1.00s emitted=30 decoded=0 dropped=0/66 trunc=0/0B desync=0
+  client 2 ppm=+0 status_ok=0.02s first_audio=4.09s first_marker=-1.00s emitted=30 decoded=0 dropped=0/10 trunc=0/0B desync=0
+  logs: /Users/tbuddy/dev/z/ninjam-001/results/desyncup/desyncup_markers.csv, /Users/tbuddy/dev/z/ninjam-001/results/desyncup/desyncup_clock.csv, /Users/tbuddy/dev/z/ninjam-001/results/desyncup/desyncup_summary.txt, /Users/tbuddy/dev/z/ninjam-001/results/desyncup/desyncup_clients.csv, /Users/tbuddy/dev/z/ninjam-001/results/desyncup/desyncup_trunc.csv

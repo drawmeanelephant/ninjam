@@ -8,8 +8,8 @@ Measured, not assumed. Every number below comes from a raw log in
 ```
 
 That builds, runs the detector self-test (and refuses to produce numbers if
-it fails), runs all 13 scenarios, and regenerates `results/tables.md`. Total
-wall time is about 67 minutes, almost all of it the 10-11 minute drift runs.
+it fails), runs all 19 scenarios, and regenerates `results/tables.md`. Total
+wall time is about 145 minutes, dominated by the eight 11-minute drift runs.
 `./tools/run_interval_lab.sh --list` prints the scenario names;
 `--only NAME[,NAME]` runs a subset; `--quick` shortens the durations.
 
@@ -38,6 +38,13 @@ wall time is about 67 minutes, almost all of it the 10-11 minute drift runs.
 | late joiner: connect -> first remote audio | **8.07 s** (120.04 s -> 128.11 s), i.e. 2.02 intervals |
 | late joiner's phase vs the rest of the session | **-0.02 ms** |
 | max interval-boundary phase error, any scenario, no audio involved | **0.98 ms** |
+| a short (not lost) audio write, 5% of writes cut by 2000 B | **silently accepted**: no error path, no log line from either end, session stays up, delay still 2.0000 intervals, alignment 0.02 ms |
+| what one short write costs | the **rest of the interval it landed in and nothing else**: median start 266 ms into a 2 s interval, median 1646 ms lost, **27 of 27 gaps end exactly on an interval boundary**, longest gap 0.87 intervals |
+| does it bleed into the next interval? | **no.** Each interval carries its own Ogg headers, so the decoder re-initialises at every boundary and the next interval plays normally (§6) |
+| is a *lost* message worse than a short one? | **yes, at the same 5% rate: 47 damaged intervals vs 27**, markers heard 52-57 of 60 vs 57-59 of 60, and the worst lost-message gap reached **1.88 intervals** - longer than a whole interval, where no short write ever did (§6) |
+| one truncated *upload* vs one truncated *download* | a download is private to the client that received it (19 of 23 intervals hit one client); an upload is forwarded by the server and hits **every other participant at the same instant** (11 of 12 intervals hit two clients, 9 of those on the same emitter) (§6) |
+| a byte dropped mid-message (8 B), downlink | **kills the session outright**: affected clients end at `NJC_STATUS_DISCONNECTED`, 0 markers, peers untouched (§6) |
+| a byte dropped mid-message (8 B), uplink | kills that one user; the server logs `code=-1` and serves the rest. At 3% all three users were gone within 70 s (§6) |
 
 ## 1. The delay is two intervals, not one
 
@@ -209,7 +216,7 @@ Three pairs that slipped are **not** in that table, and the reason matters:
 | drift8000 | 2<-1 | -16000 | t=500.1 | 2.00 iv | t=520.4 | 2.08 iv |
 | drift12000 | 2<-1 | -24000 | t=332.0 | 1.99 iv | t=340.2 | 2.04 iv |
 
-  These are the startup-offset pairs described in §9. Their first transition
+  These are the startup-offset pairs described in §10. Their first transition
   is a *second* boundary crossing relative to where they started, and it lands
   at exactly 2 intervals as the same one-interval rule predicts.
 - **Some pairs slip back.** Three pairs cross the boundary and later return to
@@ -313,7 +320,7 @@ reached playout, rtt-spread's six pairs would have spread across a 250 ms range
 and every pair would have sat ~200 ms above baseline. Alignment, the wrapped
 grid error and the clock-domain probe are equally unmoved, and both runs
 decoded every marker that was measurable (the nominal 93.8% is the window
-arithmetic described in §8, not loss: zero audio messages were dropped).
+arithmetic described in §9, not loss: zero audio messages were dropped).
 
 That the injection really happened is visible per client rather than taken on
 trust: in `rtt-spread` the per-client `audio_msgs_delayed` column reads 0 of 98
@@ -352,7 +359,160 @@ halves of a client's one-way latency are applied from the client end (its own
 pump thread), because the server pumps every connection on one thread and a
 hold set there would be last-wins across all of them.
 
-## 6. Join in progress
+## 6. A short message is not a lost message, and it is not detected
+
+Issue #23 asks about the case §3 cannot reach: not a whole `INTERVAL_WRITE`
+vanishing, but the same write arriving with the tail of its payload missing.
+The issue frames this as what a real lossy link does, and that framing turns
+out to conflate two faults that behave nothing alike, so both are measured
+here.
+
+A message is a type byte plus a 32-bit length and nothing else - no resync
+marker, no checksum, no sequence number. That gives two distinct faults:
+
+- **A short message.** Framing intact, payload truncated. The sender's
+  message boundary still lines up with the receiver's, so the receiver cannot
+  tell it from a complete write. This is what something that re-chunks or
+  trims *at the message layer* produces - a proxy, a middlebox with a buffer
+  limit, a sender-side cap.
+- **A truncated byte stream.** Bytes gone from the middle of a message. Since
+  the transport is one ordered TCP stream, this is what an actual network
+  fault produces - and because the framing has no resync marker, every
+  message after the hole is read at the wrong offset.
+
+The issue's wording ("a real lossy link truncates streams mid-message") names
+the second while the harness it suggests can only produce the first. Measuring
+both is the point of this section, and they do not resemble each other: the
+first costs a fraction of one interval, the second ends the session.
+
+`mpb_server_download_interval_write::parse` (`ninjam/mpb.cpp:434`) shows why the
+short case is invisible - it derives `audio_data_len` from the message size:
+
+```c
+if (msg->get_size() < 17) return 1;
+...
+audio_data = p;
+audio_data_len = msg->get_size()-17;
+```
+
+There is nothing to compare that against, so a message that is 2000 bytes
+short parses exactly like a complete one. The client appends it to the
+interval's decode buffer and the session carries on.
+
+Six scenarios, 200 s each, at a 2 s interval with a 6.5 s mark period. 6500
+mod 2000 = 500, so markers land at four distinct offsets inside an interval and
+damage can be attributed to the interval it happened in. `--steady` adds a
+quiet 250 Hz tone to every channel, which turns each remote channel's decoded
+level into a continuous measure of whether its audio is flowing; the gaps below
+are measured in that level at the clock probe's 10 Hz. `truncbase` is the
+control and differs from the others only in tempo, mark period and that tone.
+
+| scenario | what is damaged | clients alive at end | markers heard (of 60 possible) |
+|----------|-----------------|----------------------|--------------------------------|
+| truncbase | nothing injected | 3 of 3 | 60, 60, 60 |
+| truncdown | 5% of the writes a client **receives**, 2000 B cut from each | 3 of 3 | 57, 58, 59 |
+| truncup | 5% of the writes the **server receives**, 2000 B cut from each | 3 of 3 | 59, 59, 60 |
+| truncloss | 5% of received writes **dropped whole** (the §3 case) | 3 of 3 | 52, 57, 57 |
+| desync | 3% of received messages lose **8 bytes mid-body** | **1 of 3** | 0, 0, 1 |
+| desyncup | 3% of the server's received messages lose 8 bytes mid-body | **0 of 3** | 0, 0, 0 |
+
+**The decoder does none of the three things the issue was worried about.** It
+does not error, it does not emit garbage, and it does not hang. The damaged
+span decodes to silence: the median level inside a gap is 0.0043 against a live
+level of 0.0127 on the same channel, and in the control run no sample of any
+channel ever falls below the detection threshold at all - the two states are
+genuinely distinct, not a threshold artefact. Every client ended the run at
+`NJC_STATUS_OK`, alignment stayed at 0.02 ms with zero whole-interval slips,
+and the emission-to-playback delay stayed at 2.0000 intervals (4000.05-4000.11
+ms across the four non-desync runs). The model is undisturbed by short writes.
+
+**What a short write costs is the rest of its interval, and not one sample
+more.**
+
+| scenario | gaps measured | audio stops this far into the interval | median gap | longest gap | longest / interval | gaps ending exactly on an interval edge |
+|----------|---------------|----------------------------------------|------------|-------------|--------------------|------------------------------------------|
+| truncbase | 0 | - | - | - | - | - |
+| truncdown | 27 | 266 ms | 1646 ms | 1741 ms | **0.87** | **27 / 27** |
+| truncup | 26 | 251 ms | 1732 ms | 1745 ms | **0.87** | **26 / 26** |
+| truncloss | 47 | 275 ms | 1636 ms | 3767 ms | **1.88** | 47 / 47 |
+
+So the answer to "does corruption bleed into the next interval" is no. A hole in
+the middle of one interval's stream stalls that interval, and the boundary
+hands the decoder a fresh stream that starts with headers again.
+`VorbisDecoder::DecodeWrote` (`WDL/vorbisencdec.h`) does exactly that when the
+page serial number changes, clearing the decoder and re-initialising it; that
+recovery landing precisely on interval edges, 53 times out of 53, is the
+evidence that each interval's audio is its own Ogg stream rather than a
+continuation. **The interval grid is also the error boundary**: corruption
+cannot propagate past an interval edge, because the next interval does not
+depend on the damaged bytes. The 10 Hz sampling puts a +/-100 ms bound on each
+edge, and every one of the 53 short-write gaps falls inside it.
+
+**A lost message is worse than a short one, which is the opposite of how the
+issue frames the question.** At the same nominal 5%, dropping
+messages whole damaged 47 intervals against 27 for cutting them short, cost
+more markers (52-57 of 60 against 57-59), and produced gaps that reached
+**1.88 intervals** - longer than a whole interval, so 4 of the 47 spanned a
+boundary - where no short write ever exceeded 0.87. The likely reason is what a lost message takes with it: a
+truncated write still delivers the start of its block, so the decoder gets
+whatever came before the cut, whereas a message that never arrives removes a
+whole ~8 kB block including the pages the next write continues from.Those 4 loss gaps are the one number here I cannot fully account for from
+the code; it would need the decoder's serial and state trace to settle, and it
+is left as an open item rather than explained away.
+
+**Direction decides who pays.** A truncated *download* is private to the client
+that received it. A truncated *upload* is forwarded by the server to everyone
+else, so one damaged write costs every other participant the same interval at
+the same instant:
+
+| scenario | intervals with a gap | only 1 client affected | 2 clients affected | 3 clients affected | 2+ clients lost the same emitter |
+|----------|----------------------|------------------------|--------------------|--------------------|-----------------------------------|
+| truncdown | 23 | 19 | 4 | 0 | 1 |
+| truncup | 12 | **0** | 11 | 1 | **9** |
+| truncloss | 38 | 31 | 7 | 0 | 3 |
+
+The `truncup` row is the signature: no interval damages a single client, and in
+9 of the 11 two-client intervals both lost the *same emitter index*, which two
+independent rolls would not reproduce. The 4 two-client intervals in `truncdown`
+are two rolls landing in the same interval by chance, and only 1 of those
+shares an emitter index. One client's bad write, two victims - and the
+originating client is not one of them.
+
+**A byte dropped mid-message is a different failure entirely, and the framing
+cannot survive it.** This is the case the issue's framing ("truncation") points
+at and the one that actually matters in deployment. Losing 8 bytes from the
+middle of a message body leaves every subsequent message misparsed, because
+the framing is a bare length with no resync marker to search for: the header of
+whatever comes next is read out of audio data. In the downlink run, both
+affected clients ended at `NJC_STATUS_DISCONNECTED` with zero markers decoded,
+and each one's session clock stopped advancing within one 100 ms sample of the
+drop - at the drop's own session position, so the failure is detected at once
+rather than after a timeout. The third client, untouched, ran the full 200 s
+and finished healthy. On the uplink the server drops that one user and carries
+on serving the rest (`disconnected (username:'client2@...', code=-1)` in the
+server log, three separate entries 8 s and 56 s apart); at 3% all three users
+were gone within 70 s and the session ended with the server still up.
+
+The client reports a plain disconnect. `NJClient::Run` sets `m_status=1002` on
+any transport error and sets no error string, so a stream that was silently
+mangled is indistinguishable to the user from a network that went away. There
+is no recovery path short of reconnecting, and no diagnostic that says why.
+
+**Coverage.** `fuzz/` drives client-to-server bytes into the *server*
+(`fuzz/harness.cpp`, and every seed in `gen_corpus.py` is built from
+`MSG_CLIENT_UPLOAD_INTERVAL_*`). Nothing there exercises a client decoding a
+damaged download, which is why none of this was caught before it was measured.
+
+**Instrumentation note.** The truncation injector is receive-side only, for the
+same reason the delay injector is: what a truncation models is what the receiver
+ended up with, and the receive side is also the only place a per-participant
+value can be applied, since the server pumps every connection on one thread.
+A short message is built as a **copy** rather than by resizing in place,
+because messages are refcounted and the server hands the same `Net_Message` to
+every other participant - shrinking it in place would truncate the upload for
+all of them and desynchronise the sender's own byte count.
+
+## 7. Join in progress
 
 A fourth client connects 120 s into a 300 s run.
 
@@ -367,7 +527,7 @@ running timeline; it just waits out the pipeline. Once in, its phase sits
 **-0.02 ms** from the rest of the session and its delay to the existing
 clients is 8000.03-8000.06 ms, indistinguishable from theirs to each other.
 
-## 7. Claims the data contradicts
+## 8. Claims the data contradicts
 
 **a. "Every client plays along to the previous interval" is off by one
 interval end-to-end.** The pitch describes the client-side half. Measured
@@ -392,14 +552,17 @@ runs on a single TCP stream (`Net_Connection` wraps `JNL_IConnection`; there
 is no UDP path), so IP-level packet loss is unobservable by construction -
 TCP would convert it into latency. The loss figures above are loss of
 audio-bearing `Net_Message`s, which is the coarsest granularity at which loss
-can be injected at all. They are a worst case, not a network model.
+can be injected at all. They are a worst case, not a network model. §6 measures
+the two finer-grained cases that claim reaches past: a short message, which
+costs less than a lost one, and a byte dropped mid-message, which is fatal
+rather than degrading.
 
 **d. The interval model is more robust than advertised in the one case that
 matters most - a late joiner.** 8.07 s of dead air on join, then bit-level
 phase agreement. Nothing in the data suggests a joining client can disturb
 the session it joins.
 
-## 8. Measurement caveats, stated rather than smoothed over
+## 9. Measurement caveats, stated rather than smoothed over
 
 **The clock probe's "slip rate" column is not a drift measurement.** It reads
 3.7-4.3% for drift50, drift200 *and* drift8000, and exactly 0.00% for every
@@ -447,7 +610,7 @@ Every other client runs a detector over its own output. Because no shared time
 origin exists, the reported error is always a *difference* between two
 listeners' answers to the same event - pairwise, never absolute.
 
-## 9. What is still open
+## 10. What is still open
 
 Each of these has a tracking issue.
 
@@ -481,10 +644,21 @@ Each of these has a tracking issue.
   process receives for every participant on shared threads (§5
   instrumentation note).
   [#22](https://github.com/drawmeanelephant/ninjam/issues/22)
-- **Loss is all-or-nothing per message.** A real lossy link truncates streams
+- ~~**Loss is all-or-nothing per message.** A real lossy link truncates streams
   mid-message. Here a dropped `INTERVAL_WRITE` loses a whole chunk, which is
   the harsher case, so the 72.2% at 10% loss is a lower bound on what
-  survives. [#23](https://github.com/drawmeanelephant/ninjam/issues/23)
+  survives.~~ **Measured, and the ordering is the opposite of what this entry
+  assumed.** A dropped message is indeed the harsher case, but not because
+  truncation is gentler than expected - because dropping the whole block is
+  worse than shortening it. At the same 5%, whole-message loss damaged 47
+  intervals against 27 for cutting 2000 B off the tail, and its worst gap
+  reached 1.88 intervals where no short write exceeded 0.87 (§6). A short
+  message is accepted silently and costs the rest of its own interval; a byte
+  dropped mid-message is not a degradation at all but a fatal framing error
+  that kills the connection within one 100 ms clock sample. The 72.2% at 10% loss is
+  therefore a *pessimistic* bound on what survives a link that merely shortens
+  writes, and an optimistic one for anything that drops bytes mid-message.
+  [#23](https://github.com/drawmeanelephant/ninjam/issues/23)
 - **Some pairs start a whole interval off before any drift accumulates.** This
   turned up while validating §2.1 and is not drift at all. In every run with
   offsets of 3000 ppm or more, several client pairs measure 4020 ms instead of
