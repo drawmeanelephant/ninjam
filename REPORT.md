@@ -13,6 +13,14 @@ Total wall time is about 145 minutes, dominated by the eight 11-minute drift
 runs. `./tools/run_interval_lab.sh --list` prints the scenario names;
 `--only NAME[,NAME]` runs a subset; `--quick` shortens the durations.
 
+There is a second, opt-in lane: `./tools/run_interval_lab.sh --probes` adds
+the nine short runs behind §2.3 (`startoff1s/2s/4s`, `ramp3000`, and
+`ppm500`..`ppm2500`), about 18 minutes on top. They are **not** in the default
+matrix because they feed exactly one number in this report - the onset bracket
+in §2.3 - and folding them in would slow every other reproduction to serve one
+table. Their logs are checked in under `results/`, so the analyzer picks them
+up either way and `--only=startoff1s` works without also passing `--probes`.
+
 ## Headline numbers
 
 | claim | measured |
@@ -352,6 +360,10 @@ whole interval of misalignment present at t=0, before a millisecond of clock
 error has accumulated, with no gradual onset for anything to ramp into. The
 issue proposed three explanations and named the experiment that would separate
 them. All three are now settled, and the answer is the middle one.
+
+The runs behind this section are the opt-in probe lane:
+`./tools/run_interval_lab.sh --probes` (see the header note), or
+`--probes --only=startoff1s` for one of them.
 
 **It is not a start-up transient.** Two measurements kill it. First, no client
 starts early or late, and no interval is consumed getting there: the harness

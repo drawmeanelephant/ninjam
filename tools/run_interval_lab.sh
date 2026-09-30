@@ -18,6 +18,14 @@
 #                     checking the pipeline, NOT for the numbers in REPORT.md
 #   --only NAME[,NAME] run only the named scenarios
 #   --list            list scenario names and exit
+#
+#   --probes          also run the issue #25 probe lane (9 short runs, ~18 min
+#                     of wall clock on top of the core matrix). They are off by
+#                     default because they do not feed any number in REPORT.md
+#                     except the onset bracket in 2.3, and adding them to the
+#                     default run would slow down every other reproduction for
+#                     the sake of one table. `--probes` reproduces them;
+#                     `--only=NAME` still works against either lane.
 
 set -euo pipefail
 
@@ -26,6 +34,7 @@ BUILD_DIR="$ROOT/build-interval-lab"
 OUT_DIR="$ROOT/results"
 QUICK=0
 ONLY=""
+PROBES=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -33,6 +42,7 @@ while [ $# -gt 0 ]; do
     --out)        OUT_DIR="$2"; shift 2 ;;
     --quick)      QUICK=1; shift ;;
     --only)       ONLY="$2"; shift 2 ;;
+    --probes)     PROBES=1; shift ;;
     --list)       QUICK=0; ONLY="__list__"; shift ;;
     --build-dir=*) BUILD_DIR="${1#*=}"; shift ;;
     --out=*)       OUT_DIR="${1#*=}"; shift ;;
@@ -61,6 +71,13 @@ fi
 # one interval, but counting the damage needs enough events to have a
 # distribution, and events arrive at about one per message per client.
 TRUNC_SECS="$RESID_SECS"
+
+# PROBE_SECS is much shorter. These runs answer a question about the FIRST
+# interval, not about an accumulation, so they need a handful of markers and
+# nothing more -- the quantity they measure is latched at marker 1 and then
+# only changes when the accumulated drift crosses a whole interval, which at
+# these rates would take longer than the whole run.
+PROBE_SECS=120
 
 # --- scenarios -------------------------------------------------------------
 # name | duration | ppm list | clients | extra options
@@ -204,8 +221,61 @@ desyncup|$TRUNC_SECS||3|--bpi=4 --mark-period=6.5 --steady=0.05 --srv-desync-pct
 EOF
 }
 
+# The #25 probe lane, opt-in via --probes rather than part of the default
+# matrix. Some pairs measure one whole interval less than the two-interval
+# pipeline on their very first marker, before any drift has accumulated.
+# Three hypotheses: a startup transient, the interval grid being unable to
+# express a fractional position, or an artefact of the harness pacing samples
+# at (1 + ppm*1e-6). The rows below separate them, and they are short because
+# they are all decided at marker 1.
+#
+# startoff1s / startoff2s / startoff4s inject ZERO clock error of any kind.
+# --start-offset holds one client's audio start back by a fixed 1, 2 and 4
+# seconds, which moves its session position 0 -- and with it the phase of its
+# whole interval grid against the server's -- later in wall time, without
+# changing how fast any grid is traversed. If a pure phase offset with no rate
+# anywhere reproduces the one-interval offset, it is not about drift. That the
+# 2 s and 4 s rows answer identically to the 1 s row is the point: only the
+# sign matters, because a phase shift is taken modulo the interval.
+#
+# ramp3000 is the drift3000 ladder with the offset dialled in from 0 over the
+# whole run. A startup transient would have to happen while the offset is
+# still zero, so if ramping removes the effect it cannot be a transient.
+#
+# ppm500 .. ppm2500 bracket the onset in ppm. Under the grid reading the
+# onset is where the emitter's grid phase leads the listener's by enough to
+# beat the pipeline's own close-to-decode latency, which is a prediction
+# about the size of the lead rather than about startup.
+probe_scenarios() {
+  cat <<EOF
+startoff1s|$PROBE_SECS||3|--start-offset=0:0:1
+startoff2s|$PROBE_SECS||3|--start-offset=0:0:2
+startoff4s|$PROBE_SECS||3|--start-offset=0:0:4
+ramp3000|$PROBE_SECS|0:3000:-3000|3|--ppm-ramp=$PROBE_SECS
+ppm500|$PROBE_SECS|0:500:-500|3|
+ppm1000|$PROBE_SECS|0:1000:-1000|3|
+ppm1500|$PROBE_SECS|0:1500:-1500|3|
+ppm2000|$PROBE_SECS|0:2000:-2000|3|
+ppm2500|$PROBE_SECS|0:2500:-2500|3|
+EOF
+}
+
+# What this invocation actually runs: the core matrix, plus the probe lane if
+# asked for. Every consumer below goes through here rather than through
+# scenarios() directly, so `--list` and the run loop cannot drift apart.
+all_scenarios() {
+  scenarios
+  # An explicit --only=NAME naming a probe should work without also having to
+  # pass --probes; the only-filter drops the rest, so emitting the probe lane
+  # there costs nothing. --list is excluded because --list with no --only is
+  # how you ask what the default matrix contains.
+  if [ "$PROBES" = "1" ] || { [ -n "$ONLY" ] && [ "$ONLY" != "__list__" ]; }; then
+    probe_scenarios
+  fi
+}
+
 if [ "$ONLY" = "__list__" ]; then
-  scenarios | sed -n 's/^\([^#|][^|]*\)|.*/\1/p'
+  all_scenarios | sed -n 's/^\([^#|][^|]*\)|.*/\1/p'
   exit 0
 fi
 
@@ -233,7 +303,7 @@ mkdir -p "$OUT_DIR"
 
 # --- run the matrix --------------------------------------------------------
 echo "== running scenarios into $OUT_DIR"
-scenarios | while IFS='|' read -r name secs ppm nclients extra; do
+all_scenarios | while IFS='|' read -r name secs ppm nclients extra; do
   # The scenario list is a heredoc of commentary and one pipe-separated record
   # per line. Blank and comment lines have to be dropped here: without this the
   # unfiltered run -- the documented "one command reproduces everything" --
