@@ -1,0 +1,8 @@
+tag=ppm1000 duration=120.0s markers=54 clock_rows=3543 trunc_rows=0
+  client 0 ppm=+0 status_ok=0.02s first_audio=20.03s first_marker=20.06s emitted=9 decoded=18 dropped=0/58 trunc=0/0B desync=0
+    start: audio=+0.000s first_iv=+0.000s iv_spos=2.0ms (ppm_eff=+0)
+  client 1 ppm=+1000 status_ok=0.02s first_audio=20.03s first_marker=20.04s emitted=10 decoded=18 dropped=0/60 trunc=0/0B desync=0
+    start: audio=+0.000s first_iv=+0.000s iv_spos=2.0ms (ppm_eff=+1000)
+  client 2 ppm=-1000 status_ok=0.02s first_audio=16.07s first_marker=16.08s emitted=9 decoded=18 dropped=0/58 trunc=0/0B desync=0
+    start: audio=+0.000s first_iv=+0.000s iv_spos=2.0ms (ppm_eff=-1000)
+  logs: /Users/tbuddy/dev/z/ninjam-001/results/ppm1000/ppm1000_markers.csv, /Users/tbuddy/dev/z/ninjam-001/results/ppm1000/ppm1000_clock.csv, /Users/tbuddy/dev/z/ninjam-001/results/ppm1000/ppm1000_summary.txt, /Users/tbuddy/dev/z/ninjam-001/results/ppm1000/ppm1000_clients.csv, /Users/tbuddy/dev/z/ninjam-001/results/ppm1000/ppm1000_trunc.csv, /Users/tbuddy/dev/z/ninjam-001/results/ppm1000/ppm1000_start.csv

@@ -1,0 +1,8 @@
+tag=ppm2000 duration=120.0s markers=54 clock_rows=3543 trunc_rows=0
+  client 0 ppm=+0 status_ok=0.02s first_audio=20.11s first_marker=20.06s emitted=9 decoded=18 dropped=0/58 trunc=0/0B desync=0
+    start: audio=+0.000s first_iv=+0.000s iv_spos=2.0ms (ppm_eff=+0)
+  client 1 ppm=+2000 status_ok=0.02s first_audio=20.01s first_marker=20.02s emitted=10 decoded=18 dropped=0/60 trunc=0/0B desync=0
+    start: audio=+0.000s first_iv=+0.000s iv_spos=2.0ms (ppm_eff=+2000)
+  client 2 ppm=-2000 status_ok=0.02s first_audio=16.05s first_marker=16.09s emitted=9 decoded=18 dropped=0/58 trunc=0/0B desync=0
+    start: audio=+0.000s first_iv=+0.000s iv_spos=2.0ms (ppm_eff=-2000)
+  logs: /Users/tbuddy/dev/z/ninjam-001/results/ppm2000/ppm2000_markers.csv, /Users/tbuddy/dev/z/ninjam-001/results/ppm2000/ppm2000_clock.csv, /Users/tbuddy/dev/z/ninjam-001/results/ppm2000/ppm2000_summary.txt, /Users/tbuddy/dev/z/ninjam-001/results/ppm2000/ppm2000_clients.csv, /Users/tbuddy/dev/z/ninjam-001/results/ppm2000/ppm2000_trunc.csv, /Users/tbuddy/dev/z/ninjam-001/results/ppm2000/ppm2000_start.csv

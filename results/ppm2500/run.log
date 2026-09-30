@@ -1,0 +1,8 @@
+tag=ppm2500 duration=120.0s markers=54 clock_rows=3546 trunc_rows=0
+  client 0 ppm=+0 status_ok=0.02s first_audio=16.04s first_marker=16.06s emitted=9 decoded=18 dropped=0/58 trunc=0/0B desync=0
+    start: audio=+0.000s first_iv=+0.000s iv_spos=2.0ms (ppm_eff=+0)
+  client 1 ppm=+2500 status_ok=0.02s first_audio=20.00s first_marker=20.01s emitted=10 decoded=18 dropped=0/60 trunc=0/0B desync=0
+    start: audio=+0.000s first_iv=+0.000s iv_spos=2.0ms (ppm_eff=+2500)
+  client 2 ppm=-2500 status_ok=0.02s first_audio=16.15s first_marker=16.10s emitted=9 decoded=18 dropped=0/58 trunc=0/0B desync=0
+    start: audio=+0.000s first_iv=+0.000s iv_spos=2.0ms (ppm_eff=-2500)
+  logs: /Users/tbuddy/dev/z/ninjam-001/results/ppm2500/ppm2500_markers.csv, /Users/tbuddy/dev/z/ninjam-001/results/ppm2500/ppm2500_clock.csv, /Users/tbuddy/dev/z/ninjam-001/results/ppm2500/ppm2500_summary.txt, /Users/tbuddy/dev/z/ninjam-001/results/ppm2500/ppm2500_clients.csv, /Users/tbuddy/dev/z/ninjam-001/results/ppm2500/ppm2500_trunc.csv, /Users/tbuddy/dev/z/ninjam-001/results/ppm2500/ppm2500_start.csv

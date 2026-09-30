@@ -232,19 +232,34 @@ this was caught earlier. That is where new coverage belongs.
 
 ## Not filed, but worth knowing
 
-- **Some client pairs start a whole interval off before any drift
-  accumulates.** In every run with offsets ≥3000 ppm, several pairs measure
-  4020 ms instead of 8020 ms on their *first* marker. It appears at 3000 ppm
-  and above, not at 200 ppm or below, and which pairs get it is not a simple
-  function of the sign of the offset. Likely a startup transient where a fast
-  sample counter crosses an extra interval boundary while the session is coming
-  up, and the interval model has no way to express a fractional position. This
-  is a **join-time** quantisation and it is a sharper failure than slow drift: a
-  badly-clocked client can be a whole interval out before playing a note.
-  Deserves its own issue and experiment. It is excluded from the §2.1 threshold
-  numbers, which use only pairs that start aligned; the two affected pairs need
-  two intervals of accumulated error to show a transition and cross at
-  1.99–2.08 iv, exactly as the same one-interval rule predicts.
+- ~~**Some client pairs start a whole interval off before any drift
+  accumulates.**~~ **RESOLVED as issue #25, and it was not a startup transient
+  at all** — it is the interval grid, the same mechanism as §2.1. See
+  REPORT.md §2.3 for the working. The short version, because the reasoning is
+  easy to redo wrongly:
+
+  - **A client cannot consume an interval during startup.** `m_interval_pos`
+    starts at `-1`, so the first `AudioProc` chunk after `m_audio_enable`
+    opens interval 1 immediately. Measured, every client's first boundary lands
+    at 0.001 of an interval. The "fast counter crosses an extra boundary while
+    the session comes up" story has no mechanism behind it.
+  - **Ramping the drift in from 0 removes the effect entirely** (`--ppm-ramp`).
+    A startup transient would have to occur while the offset is still zero.
+    This is the experiment that settles it, and it is one flag.
+  - **A fixed start offset with zero ppm anywhere reproduces it**, with only the
+    *sign* deciding and 1 s / 2 s / 4 s answering identically (`--start-offset`).
+    That rules out the harness pacing samples at (1 + ppm·1e-6).
+  - **The real rule**: a pair reads one interval low when the emitter's
+    interval closes before the listener's next boundary — `lead = (origin_E -
+    origin_L) + S·(1/rate_E − 1/rate_L)` goes negative. Onset is a lead of
+    25–40 ms, i.e. the pipeline's own close-to-decode latency. The state is
+    latched at marker 1 and only changes when accumulated drift crosses the
+    next whole interval, which is why the affected pairs cross at 1.99–2.08 iv
+    and why §2.1 excludes them from the threshold numbers.
+
+  The new `<tag>_start.csv` records each client's session origin and first
+  boundary, and the analyzer's new §7c prints predicted `lead` beside the
+  measured offset so the two can never be confused for one another.
 - **A single-marker slip reading is only as good as the gap before it.**
   Marker gaps in these runs are not uniformly 12 s: the median is 12.0 s but
   the maximum is 87.2 s, because a pair that is slipping also drops markers.
