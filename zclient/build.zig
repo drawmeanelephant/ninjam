@@ -112,4 +112,16 @@ pub fn build(b: *std.Build) void {
     const run_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_tests.step);
+
+    const shim_mod = b.createModule(.{ .target = target, .optimize = optimize, .link_libc = true });
+    shim_mod.addCSourceFiles(.{
+        .files = &.{"tests/audio_shim_test.c"},
+        .flags = &.{ "-std=gnu11", "-UNDEBUG" },
+    });
+    if (target.result.os.tag == .linux) {
+        inline for (.{ "pthread", "m", "dl" }) |lib| shim_mod.linkSystemLibrary(lib, .{});
+    }
+    const shim_tests = b.addExecutable(.{ .name = "audio-shim-tests", .root_module = shim_mod });
+    const run_shim = b.addRunArtifact(shim_tests);
+    test_step.dependOn(&run_shim.step);
 }

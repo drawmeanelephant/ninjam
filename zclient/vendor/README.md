@@ -45,6 +45,9 @@ To rebuild the trees from scratch, use the script rather than doing it by hand
 `miniaudio_impl.c` and `stb_vorbis_impl.c` are hand-written (the shim TUs);
 the script copies them through unchanged and will refuse to run if either is
 missing.
+The audio-shim regression executable lives in `tests/audio_shim_test.c`, not
+the downloaded vendor tree. It uses only miniaudio's null backend and checks
+playback-only operation, device selection, resource lifetime, and signed errors.
 
 `--check` runs in CI, and in `demo/run_demo.sh`. It answers "is `vendor/` still
 exactly what upstream ships?" without touching the working tree, so an accidental
