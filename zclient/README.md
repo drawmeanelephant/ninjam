@@ -78,6 +78,47 @@ ring boundary, so a silent device cannot fake a passing run. A full transcript
 
 ## Maintaining this
 
+### Embedding an instrument source
+
+The session engine has optional, synchronous callbacks, with no synth or
+application imports:
+
+* `Source.custom` fills a mono block at the supplied interval sample offset.
+  It is called per local channel. A stateful source must advance even when
+  upload backpressure discards the block; a rest bar never calls it.
+* `Options.plan` selects broadcast vs silence marker once at the bar boundary,
+  including rest bars. Apply pending source changes inside this callback,
+  before returning, so a chat/UI change cannot splice the current bar.
+* `Options.on_chat` receives borrowed `proto.ChatParms`. Interpret commands in
+  the caller; fields remain valid only until that callback returns.
+* `Options.stop` finalizes the currently generated interval portion and stops;
+  it also interrupts reconnect backoff. It does not wait for or generate the
+  unplayed remainder. Null callbacks preserve the CLI's original behavior.
+
+Contexts are borrowed and must outlive `Session.run()`. Callbacks run on the
+session thread and must not block. `Options.id_seed` pins upload GUIDs and
+Vorbis serials to the monotonic interval sequence; historical hash-domain
+tags are retained to preserve existing instrument payload bytes.
+`instrument.zig` contains interval identity, bounded clock slew, capped
+reconnect backoff, and deterministic ID/dump helpers.
+
+All writes, including control messages, yield on backpressure. A partial
+frame retains its mandatory tail in a fixed-size queue; no later frame can
+interleave with it. The unsent bar remainder is dropped once, but source
+generation/capture and the interval clock continue. Stats distinguish
+backpressure drops from reconnect losses.
+
+`audio.Device.openPlayback` opens only playback, without a capture device.
+The C shim retains its context and separately resolved playback/capture IDs
+until device close, and returns native negative miniaudio result codes.
+Its standalone test compiles only the null backend, so CI never opens a real
+speaker or requests mic permission.
+
+The scripted real-socket regressions run in `zig build test`: IPv4/IPv6
+transport, torn-frame recovery, bounded clock/drop behavior, reconnects, and
+a constrained-stream session whose peer stops reading then decodes recovered
+uploads on the same connection. No physical audio hardware is needed.
+
 The short version: **this is a protocol conformance client, not a product.** It
 exists to be a second independent implementation of the frozen protocol, so the
 spec and the server can be checked against something that was not written by

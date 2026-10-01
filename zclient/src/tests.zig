@@ -15,4 +15,6 @@ test {
     // audio.zig owns the live-audio ring/resampler tests; imported (not
     // refAllDecls) so `zig build test -Dlive=false` still links without miniaudio
     _ = @import("audio.zig");
+    _ = @import("backpressure_test.zig");
+    _ = @import("session_timing_test.zig");
 }
