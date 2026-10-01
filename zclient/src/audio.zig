@@ -24,6 +24,16 @@ extern fn zc_device_open(
     user: ?*anyopaque,
     device_id: ?[*:0]const u8,
 ) c_int;
+/// Playback-only open (no capture side) for the local audition path (#20):
+/// kujamba play/trigger use this so no mic permission is ever asked for.
+extern fn zc_playback_device_open(
+    out: *?*anyopaque,
+    srate: c_uint,
+    period_frames: c_uint,
+    fill: *const fn (?*anyopaque, ?[*]f32, ?[*]const f32, c_uint) callconv(.c) void,
+    user: ?*anyopaque,
+    device_id: ?[*:0]const u8,
+) c_int;
 extern fn zc_device_close(handle: ?*anyopaque) void;
 extern fn zc_device_sample_rate(handle: ?*anyopaque) c_uint;
 extern fn zc_device_name(handle: ?*anyopaque) [*:0]const u8;
@@ -207,23 +217,39 @@ pub const Device = struct {
     /// synthetic source when this fails (no device / no permission); the
     /// miniaudio error code is left in `last_open_error`.
     pub fn open(alloc: std.mem.Allocator, srate: u32, period_frames: u32, device_id: ?[*:0]const u8) !*Device {
-        const self = try alloc.create(Device);
-        var tx = Ring.init(alloc, @intFromFloat(@as(f32, @floatFromInt(srate)) * capture_ring_seconds)) catch |e| {
-            alloc.destroy(self);
-            return e;
-        };
-        const rx = Ring.init(alloc, @intFromFloat(@as(f32, @floatFromInt(srate)) * playback_ring_seconds)) catch |e| {
-            tx.deinit(alloc);
-            alloc.destroy(self);
-            return e;
-        };
-        self.* = .{ .tx = tx, .rx = rx, .srate = srate, .jitter_frames = @intFromFloat(@as(f32, @floatFromInt(srate)) * capture_jitter_seconds) };
+        return openMode(alloc, srate, period_frames, device_id, false);
+    }
 
+    /// Playback only: never create a capture device or request mic permission.
+    pub fn openPlayback(alloc: std.mem.Allocator, srate: u32, period_frames: u32, device_id: ?[*:0]const u8) !*Device {
+        return openMode(alloc, srate, period_frames, device_id, true);
+    }
+
+    fn allocate(alloc: std.mem.Allocator, srate: u32, playback_only: bool) !*Device {
+        const self = try alloc.create(Device);
+        errdefer alloc.destroy(self);
+        var tx = try Ring.init(alloc, if (playback_only) 0 else @intFromFloat(@as(f32, @floatFromInt(srate)) * capture_ring_seconds));
+        errdefer tx.deinit(alloc);
+        const rx = try Ring.init(alloc, @intFromFloat(@as(f32, @floatFromInt(srate)) * playback_ring_seconds));
+        self.* = .{
+            .tx = tx,
+            .rx = rx,
+            .srate = srate,
+            .jitter_frames = if (playback_only) 0 else @intFromFloat(@as(f32, @floatFromInt(srate)) * capture_jitter_seconds),
+        };
+        return self;
+    }
+
+    fn openMode(alloc: std.mem.Allocator, srate: u32, period_frames: u32, device_id: ?[*:0]const u8, playback_only: bool) !*Device {
+        const self = try allocate(alloc, srate, playback_only);
+        errdefer self.deinit(alloc);
         var handle: ?*anyopaque = null;
-        const rc = zc_device_open(&handle, srate, period_frames, &onData, self, device_id);
+        const rc = if (playback_only)
+            zc_playback_device_open(&handle, srate, period_frames, &onData, self, device_id)
+        else
+            zc_device_open(&handle, srate, period_frames, &onData, self, device_id);
         if (rc != 0 or handle == null) {
             last_open_error = rc;
-            self.deinit(alloc);
             return error.DeviceOpenFailed;
         }
         last_open_error = 0;
@@ -234,7 +260,7 @@ pub const Device = struct {
         while (n < self.name_buf.len and cname[n] != 0) : (n += 1) self.name_buf[n] = cname[n];
         self.name_len = n;
         if (self.dev_srate != 0 and self.dev_srate != srate) {
-            self.tx_rs = Resampler.init(self.dev_srate, srate);
+            if (!playback_only) self.tx_rs = Resampler.init(self.dev_srate, srate);
             self.rx_rs = Resampler.init(srate, self.dev_srate);
         }
         return self;
@@ -245,6 +271,10 @@ pub const Device = struct {
             zc_device_close(self.handle);
             self.handle = null;
         }
+        self.release(alloc);
+    }
+
+    fn release(self: *Device, alloc: std.mem.Allocator) void {
         self.tx.deinit(alloc);
         self.rx.deinit(alloc);
         alloc.destroy(self);
@@ -359,6 +389,20 @@ pub const Device = struct {
         return .{ .under = self.rx.underruns, .over = self.rx.overruns };
     }
 };
+
+test "device allocation cleans up when either ring allocation fails, without opening hardware" {
+    for ([_]bool{ false, true }) |playback_only| {
+        for (0..3) |fail_index| {
+            var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = fail_index });
+            if (Device.allocate(failing.allocator(), 48000, playback_only)) |device| {
+                device.release(failing.allocator());
+            } else |err| {
+                try std.testing.expectEqual(error.OutOfMemory, err);
+                try std.testing.expectEqual(failing.allocated_bytes, failing.freed_bytes);
+            }
+        }
+    }
+}
 
 test "ring: pull returns real frames, then zero-fills on underrun" {
     var r = try Ring.init(std.testing.allocator, 8);

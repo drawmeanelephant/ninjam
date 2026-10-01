@@ -380,8 +380,8 @@ test "config parse/build roundtrip (spec §10.2)" {
 test "userinfo records (spec §10.2 bob/guitar)" {
     const payload = [_]u8{
         0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
-        'b',  'o',  'b',  0x00,
-        'g',  'u',  'i',  't',  'a',  'r',  0x00,
+        'b',  'o',  'b',  0x00, 'g',  'u',
+        'i',  't',  'a',  'r',  0x00,
     };
     var sink = UserInfoSink{};
     try parseUserinfoRecords(&payload, &sink);
@@ -406,7 +406,12 @@ test "interval begin with username (spec §10.4)" {
         0x00, 0x00, 0x00, 0x00, // estsize
         0x4F, 0x47, 0x47, 0x76, // "OGGv"
         0x00, // chidx
-        'a',  'l',  'i',  'c',  'e',  0x00,
+        'a',
+        'l',
+        'i',
+        'c',
+        'e',
+        0x00,
     };
     const b = try parseIntervalBegin(&payload);
     try testing.expectEqual(@as(u32, FOURCC_OGGV), b.fourcc);
