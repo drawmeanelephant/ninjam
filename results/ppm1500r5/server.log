@@ -1,0 +1,15 @@
+[2026/10/01 23:27:38] Opened log. NINJAM Server v0.080 built on Oct  1 2026 at 23:15:14
+[2026/10/01 23:27:38] Server starting up...
+[2026/10/01 23:27:38] Port: 63417
+[2026/10/01 23:27:38] Using defaults 120 BPM 8 BPI
+[2026/10/01 23:27:38] Incoming connection from 127.0.0.1!
+[2026/10/01 23:27:38] 127.0.0.1: disconnected (username:'', code=1)
+[2026/10/01 23:27:38] Incoming connection from 127.0.0.1!
+[2026/10/01 23:27:38] Incoming connection from 127.0.0.1!
+[2026/10/01 23:27:38] Incoming connection from 127.0.0.1!
+[2026/10/01 23:27:38] got anonymous request (allowing)
+[2026/10/01 23:27:38] 127.0.0.1: Accepted user: client2@127.0.0.x
+[2026/10/01 23:27:38] got anonymous request (allowing)
+[2026/10/01 23:27:38] 127.0.0.1: Accepted user: client0@127.0.0.x
+[2026/10/01 23:27:38] got anonymous request (allowing)
+[2026/10/01 23:27:38] 127.0.0.1: Accepted user: client1@127.0.0.x

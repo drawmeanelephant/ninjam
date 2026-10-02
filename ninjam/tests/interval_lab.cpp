@@ -269,6 +269,7 @@ struct SimClient
   int      loops_seen;        // interval boundaries observed since audio start
   double   t_first_iv_s;      // wall seconds at the first interval boundary
   double   first_iv_spos_ms;  // session position at that boundary
+  int      last_loop;         // loop count at the previous pump (rollover detect)
 
   // marker emission
   std::vector<float> mark;    // this client's windowed tone burst
@@ -298,7 +299,7 @@ struct SimClient
 
   SimClient()
     : idx(0), ppm(0.0), mark_freq(0), steady_phase(0.0), budget(0.0), t_last(0.0), processed(0), t0(0), audio_started(false),
-      t_audio_start_s(-1.0), ppm_eff(0.0), loops_seen(0), t_first_iv_s(-1.0), first_iv_spos_ms(-1.0),
+      t_audio_start_s(-1.0), ppm_eff(0.0), loops_seen(0), t_first_iv_s(-1.0), first_iv_spos_ms(-1.0), last_loop(0),
       next_k(0.0), burst_rem(0), burst_pos(0), markers_emitted(0),
       markers_skipped(0), started(false), channel_made(false), t_start_s(0.0), t_connected_s(-1.0),
       t_status_ok_s(-1.0), t_first_remote_audio_s(-1.0), t_first_marker_s(-1.0),
@@ -335,6 +336,23 @@ struct MarkerRow
   double peak;
   double far_peak;
   int    suspect;
+};
+
+// Interval-rollover event (issue #32): one row every time a client's session
+// clock crosses an interval boundary. The wall time is interpolated from the
+// sample position of the rollover inside the chunk that contained it, so the
+// resolution is the sample, not the pump interval. The margin the `lead`
+// formula models is the wall-time gap between the EMITTER's rollover at
+// session position S and the LISTENER's rollover at the same session
+// position; recording both directly turns `lead` from a formula into a
+// measurement and shows which side actually moved.
+struct IvEventRow
+{
+  double t_wall_s;   // wall seconds since epoch (same clock as t_audio_start_s)
+  int    idx;
+  int    loop;       // NJClient loop count after the rollover
+  double spos_ms;    // session position of the boundary on this client's timeline
+  double ilen_ms;    // interval length in force at the rollover
 };
 
 struct ClockRow
@@ -566,6 +584,7 @@ int main(int argc, char **argv)
   std::vector<MarkerRow> markers;
   std::vector<ClockRow> clocks;
   std::vector<TruncRow> truncs;
+  std::vector<IvEventRow> ivevents;
   std::vector<Detection> dets;
   std::vector<float> mono;
 
@@ -780,6 +799,33 @@ int main(int argc, char **argv)
       float *outp[2] = { g_out[0], g_out[1] };
       c.client.AudioProc(inp,2,outp,2,(int)n,LAB_SRATE);
 
+      // ---- interval rollover events (issue #32) ----
+      // on_new_interval() fired inside the AudioProc call above whenever the
+      // client's own sample counter crossed a boundary; the loop count says
+      // whether it did. The samples fed this pump cover the chunk
+      // [sp0, sp0+n) at the pacing in force, so the boundary's wall time is
+      // recoverable to a sample. A chunk is far shorter than an interval, so
+      // at most one rollover can be inside it.
+      {
+        const int loop_now=c.client.GetLoopCount();
+        if (loop_now > c.last_loop)
+        {
+          int ipos_e=0, ilen_e=0;
+          c.client.GetPosition(&ipos_e,&ilen_e);
+          const long long chunk_end=sp0+n;
+          const long long b=chunk_end-ipos_e; // sample index of the boundary
+          const double rate_now=1.0+c.ppm_eff*1e-6;
+          IvEventRow r;
+          r.t_wall_s=t+(double)(b-sp0)/((double)LAB_SRATE*rate_now);
+          r.idx=c.idx;
+          r.loop=loop_now;
+          r.spos_ms=(double)(b-c.t0)*1000.0/(double)LAB_SRATE;
+          r.ilen_ms=ilen_e*1000.0/(double)LAB_SRATE;
+          ivevents.push_back(r);
+          c.last_loop=loop_now;
+        }
+      }
+
       // ---- detect every other client's code in our own output ----
       mono.resize(n);
       for (int q=0; q < n; q ++) mono[q]=(g_out[0][q]+g_out[1][q])*0.5f;
@@ -981,6 +1027,20 @@ int main(int argc, char **argv)
     fclose(fp);
   }
 
+  const std::string ivp=cfg.outdir+"/"+cfg.tag+"_ivevents.csv";
+  fp=fopen(ivp.c_str(),"w");
+  if (fp)
+  {
+    fprintf(fp,"t_wall_s,idx,loop,spos_ms,interval_ms\n");
+    for (size_t x=0; x < ivevents.size(); x ++)
+    {
+      const IvEventRow &r=ivevents[x];
+      fprintf(fp,"%.6f,%d,%d,%.3f,%.3f\n",
+        r.t_wall_s,r.idx,r.loop,r.spos_ms,r.ilen_ms);
+    }
+    fclose(fp);
+  }
+
   const std::string sp=cfg.outdir+"/"+cfg.tag+"_summary.txt";
   fp=fopen(sp.c_str(),"w");
   if (fp)
@@ -1103,8 +1163,8 @@ int main(int argc, char **argv)
       c.t_first_iv_s < 0.0 ? -1.0 : c.t_first_iv_s - sc[live[0]].t_first_iv_s,
       c.first_iv_spos_ms, c.ppm_eff);
   }
-  printf("  logs: %s, %s, %s, %s, %s, %s\n",
-         mp.c_str(),cp.c_str(),sp.c_str(),cp2.c_str(),tp2.c_str(),stp.c_str());
+  printf("  logs: %s, %s, %s, %s, %s, %s, %s\n",
+         mp.c_str(),cp.c_str(),sp.c_str(),cp2.c_str(),tp2.c_str(),ivp.c_str(),stp.c_str());
 
   for (int i=0; i < nslots; i ++) sc[i].client.Disconnect();
   delete[] sc;

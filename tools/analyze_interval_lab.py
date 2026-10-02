@@ -122,6 +122,10 @@ class Scenario:
         # section that uses it has to cope with its absence.
         sp = os.path.join(d, f"{name}_start.csv")
         self.starts = read_csv(sp) if os.path.exists(sp) else []
+        # Interval-rollover events per client (issue #32). Optional in the
+        # same way: runs recorded before the harness wrote the file lack it.
+        ivp = os.path.join(d, f"{name}_ivevents.csv")
+        self.ivevents = read_csv(ivp) if os.path.exists(ivp) else []
         self.summary = read_summary(os.path.join(d, f"{name}_summary.txt"))
         self._index()
 
@@ -923,7 +927,8 @@ def main():
         print("bracket reads one, so the offset is the interval grid rounding a")
         print("sub-interval phase -- not a transient, and not the pacing in the")
         print("harness. Rows sitting inside the bracket are genuinely marginal and")
-        print("are the reason the bracket is quoted as a range.\n")
+        print("are the reason the bracket is quoted as a range; section 7d")
+        print("measures both sides of their margin directly.\n")
 
         print("Per-client startup record for those runs:\n")
         rows = []
@@ -952,6 +957,131 @@ def main():
         print("there is nothing before it to have been consumed. A client cannot")
         print("cross an extra boundary while starting up, because its boundaries")
         print("are a pure function of the samples it has been handed.\n")
+
+    # --- 7d. the margin at the boundary, measured not derived (issue #32) ---
+    #
+    # §7c predicts the flip from a formula. The formula ASSUMES the emitter's
+    # interval actually closes at origin_E + S/rate_E and the listener's next
+    # boundary actually falls at origin_L + S/rate_L. Issue #32 asks whether
+    # that holds in both directions: at the same nominal lead, a pair with a
+    # slow listener and a pair with a fast emitter disagree about flipping,
+    # and one pair is non-monotonic in lead. The harness now records every
+    # client's interval rollover with a sample-interpolated wall time, so both
+    # sides of the margin can be measured rather than derived:
+    #
+    #     empirical lead = wall(emitter rollover at session position S)
+    #                    - wall(listener rollover at session position S)
+    #
+    # with S the first marker's interval close, exactly as in §7c. The
+    # pipeline's own close-to-decode latency is NOT part of this gap: it is
+    # the second term of the flip condition (empirical lead < -latency), so a
+    # directional difference that survives here lives in the latency, and one
+    # that shows up as empirical != formula lives in the grid model itself.
+    iv_names = [n for n in names if sc[n].ivevents and sc[n].starts]
+    if iv_names:
+        print("## 7d. The margin at the boundary, measured not derived (issue #32)\n")
+        ev_by_dir = {}
+        rows = []
+        for n in iv_names:
+            s = sc[n]
+            iv = s.interval_ms
+            if iv <= 0:
+                continue
+            ramp_s = f(s.summary.get("ppm_ramp_s", "0"), 0.0)
+            org, rate, ppmc = {}, {}, {}
+            for c in s.starts:
+                try:
+                    i = int(c["idx"])
+                except (KeyError, ValueError):
+                    continue
+                org[i] = f(c["t_audio_start_s"], float("nan"))
+                ppm_i = f(c["ppm"])
+                if ramp_s > 0.0:
+                    frac = min(max((s.mark_period_ms / 1000.0) / ramp_s, 0.0), 1.0)
+                    ppm_i *= frac
+                ppmc[i] = ppm_i
+                rate[i] = 1.0 + ppm_i * 1e-6
+            if not org:
+                continue
+            # rollover events per client, session position -> wall time
+            ev = {}
+            for r in s.ivevents:
+                try:
+                    ev.setdefault(int(r["idx"]), []).append(
+                        (f(r["spos_ms"]), f(r["t_wall_s"]), int(r["loop"]))
+                    )
+                except (KeyError, ValueError):
+                    continue
+            if not ev:
+                continue
+            S = s.mark_period_ms + iv
+            base = min(org.values())
+            for p in s.pairs:
+                l, e = p
+                if l not in org or e not in org:
+                    continue
+                def wall_at(i):
+                    cand = ev.get(i)
+                    if not cand:
+                        return None
+                    spos, tw, _ = min(cand, key=lambda x: abs(x[0] - S))
+                    # the closest event is within half an interval of S, or it
+                    # is not the boundary the formula talks about
+                    if abs(spos - S) > iv / 2.0:
+                        return None
+                    return tw
+                tw_e, tw_l = wall_at(e), wall_at(l)
+                if tw_e is None or tw_l is None:
+                    continue
+                # org stays in seconds here (it feeds the empirical wall-time
+                # diff directly); convert the origin term to ms for the formula
+                lead = (((org[e] - base) - (org[l] - base)) * 1000.0
+                        + S * (1.0 / rate[e] - 1.0 / rate[l]))
+                emp = (tw_e - tw_l) * 1000.0
+                v0 = s.by_pair_k.get((l, e, s.ks[0]))
+                if not v0:
+                    continue
+                first = v0[0][1]
+                start_iv = int(round((first - 2.0 * iv) / iv)) if iv > 0 else 0
+                if ppmc[l] == 0.0 and ppmc[e] == 0.0:
+                    direction = "aligned"
+                elif ppmc[l] != 0.0 and ppmc[e] != 0.0:
+                    direction = "both deviate"
+                elif ppmc[e] != 0.0:
+                    direction = "fast emitter" if ppmc[e] > 0 else "slow emitter"
+                else:
+                    direction = "fast listener" if ppmc[l] > 0 else "slow listener"
+                rows.append([
+                    n, "%d<-%d" % (l, e), direction,
+                    "%+.1f" % lead, "%+.1f" % emp, "%+.1f" % (emp - lead),
+                    "%+d" % start_iv, "yes" if start_iv < 0 else "no",
+                ])
+                ev_by_dir.setdefault(direction, []).append((emp - lead, start_iv < 0))
+        rows.sort(key=lambda r: (r[0], r[1]))
+        print(table(rows, ["scenario", "pair", "deviation carried by",
+                           "formula lead ms", "empirical lead ms", "diff ms",
+                           "start iv", "reads low"]))
+        print()
+        print("`formula lead ms` is §7c's quantity, computed from the recorded")
+        print("origins and the injected rates. `empirical lead ms` is the wall")
+        print("time between the emitter's rollover at session position S and the")
+        print("listener's rollover at the same session position, both measured by")
+        print("the harness to a sample. If the grid model is right the diff column")
+        print("is zero in both directions; if the diff itself depends on which")
+        print("clock deviates, the formula is missing something structural.\n")
+        agg = []
+        for dname, vs in sorted(ev_by_dir.items()):
+            ds = sorted(v[0] for v in vs)
+            flips = sum(1 for v in vs if v[1])
+            agg.append([
+                dname, len(vs),
+                "%+.1f" % ds[0], "%+.1f" % ds[len(ds) // 2], "%+.1f" % ds[-1],
+                "%d/%d" % (flips, len(vs)),
+            ])
+        if agg:
+            print(table(agg, ["deviation carried by", "pairs", "min diff ms",
+                              "median diff ms", "max diff ms", "reads low"]))
+            print()
 
     # --- 8. integrity ------------------------------------------------------
     print("## 8. Log integrity\n")

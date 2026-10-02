@@ -19,7 +19,7 @@
 #   --only NAME[,NAME] run only the named scenarios
 #   --list            list scenario names and exit
 #
-#   --probes          also run the issue #25 probe lane (9 short runs, ~18 min
+#   --probes          also run the #25/#32 probe lane (20 short runs, ~40 min
 #                     of wall clock on top of the core matrix). They are off by
 #                     default because they do not feed any number in REPORT.md
 #                     except the onset bracket in 2.3, and adding them to the
@@ -257,6 +257,28 @@ ppm1000|$PROBE_SECS|0:1000:-1000|3|
 ppm1500|$PROBE_SECS|0:1500:-1500|3|
 ppm2000|$PROBE_SECS|0:2000:-2000|3|
 ppm2500|$PROBE_SECS|0:2500:-2500|3|
+# Issue #32, three things the first probe lane could not settle:
+#   - repeats. The disagreeing rows sit one run each inside a band where the
+#     margin is a race between two events tens of ms apart; r2..r5 say
+#     whether they are structure or noise.
+#   - the -40 ms row. ppm2500 2<-0 reads TWO intervals where ppm2000 2<-0 at
+#     a SMALLER lead reads one; ppm2250 and ppm2750 bisect around it.
+#   - the two sides separately. Every run recorded after the harness grew
+#     interval-rollover events carries <tag>_ivevents.csv, and the analyzer's
+#     section 7d measures the emitter's close and the listener's boundary
+#     directly instead of deriving both from origins and rates. The repeats
+#     carry the same instrumentation for free.
+ppm2250|$PROBE_SECS|0:2250:-2250|3|
+ppm2750|$PROBE_SECS|0:2750:-2750|3|
+ppm1500r2|$PROBE_SECS|0:1500:-1500|3|
+ppm1500r3|$PROBE_SECS|0:1500:-1500|3|
+ppm1500r4|$PROBE_SECS|0:1500:-1500|3|
+ppm1500r5|$PROBE_SECS|0:1500:-1500|3|
+ppm2000r2|$PROBE_SECS|0:2000:-2000|3|
+ppm2000r3|$PROBE_SECS|0:2000:-2000|3|
+ppm2000r4|$PROBE_SECS|0:2000:-2000|3|
+ppm2000r5|$PROBE_SECS|0:2000:-2000|3|
+ppm2500r2|$PROBE_SECS|0:2500:-2500|3|
 EOF
 }
 

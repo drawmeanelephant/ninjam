@@ -1,0 +1,4 @@
+idx,name,ppm,ppm_eff_end,ppm_ramp_s,start_offset_s,t_audio_start_s,t_first_iv_s,first_iv_spos_ms,interval_ms
+0,client0,0,0.0000,0,0.000,384420.719,0.019,2.0,4000.000
+1,client1,2250,2250.0000,0,0.000,384420.719,0.019,2.0,4000.000
+2,client2,-2250,-2250.0000,0,0.000,384420.719,0.019,2.0,4000.000
