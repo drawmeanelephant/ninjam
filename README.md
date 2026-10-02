@@ -166,4 +166,5 @@ to make the whole system buildable and testable as one project, plus:
 GPL v2 or later for the NINJAM code (see `LICENSE` and file headers); WDL is
 dual-licensed zlib/libpng-style or GPL (see file headers). Dear ImGui, GLFW
 and miniaudio are fetched at build time and carry their own licenses
-(MIT/Zlib/Public Domain).
+(MIT/Zlib/Public Domain). Release archives bundle the required third-party
+license texts as `THIRD-PARTY-NOTICES.txt`.

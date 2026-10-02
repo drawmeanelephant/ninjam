@@ -1,8 +1,10 @@
 name: Release
 
 # Cuts a release whenever a v* tag is pushed: builds all three platforms,
-# runs the test suite, packages binaries + source tarball, generates
-# SHA256SUMS and attaches everything to the GitHub Release for the tag.
+# runs the test suite, packages binaries + third-party notices + source
+# tarball, generates SHA256SUMS and attaches everything to the GitHub Release
+# for the tag. Packaging fails if an archive is missing its notices or the
+# pins in THIRD-PARTY-NOTICES.txt have drifted from the CMake build files.
 #
 # Run it manually (workflow_dispatch) for dry runs: dispatch builds package
 # and verify everything, but never publish a release — grab the artifacts
@@ -86,14 +88,20 @@ jobs:
           else
             cp build/bin/ninjamsrv build/bin/ninjam-client "$name/"
           fi
-          cp README.md LICENSE "$name/"
+          cp README.md LICENSE THIRD-PARTY-NOTICES.txt "$name/"
           cd "$name"
           # Archive contents at the top level, no wrapper directory.
           if [ "$RUNNER_OS" = "Windows" ]; then
-            7z a -tzip "../${name}.zip" ninjamsrv.exe ninjam-client.exe README.md LICENSE
+            7z a -tzip "../${name}.zip" ninjamsrv.exe ninjam-client.exe README.md LICENSE THIRD-PARTY-NOTICES.txt
           else
-            zip "../${name}.zip" ninjamsrv ninjam-client README.md LICENSE
+            zip "../${name}.zip" ninjamsrv ninjam-client README.md LICENSE THIRD-PARTY-NOTICES.txt
           fi
+          # Release gate: every archive must carry readable notices for the
+          # components actually linked into it, and the pins recorded in the
+          # notices must still match the build files of this revision.
+          PYTHON=python3
+          command -v "$PYTHON" >/dev/null 2>&1 || PYTHON=python
+          "$PYTHON" ../tools/check_release_notices.py "../${name}.zip"
 
       - uses: actions/upload-artifact@v4
         with:
