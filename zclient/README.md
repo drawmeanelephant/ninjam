@@ -34,7 +34,7 @@ Build options:
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `-Dlive=true\|false` | `true` on macOS, `false` elsewhere | compile Phase B live audio (miniaudio). `false` builds a client with no audio-device dependency at all. |
+| `-Dlive=true\|false` | `true` for macOS targets, `false` elsewhere | use the live audio device at runtime (Phase B). miniaudio is always compiled in; the option only flips a runtime check (`session.openLive`), so `false` — or a failed device open — falls back to the synthetic `--source`. |
 
 Targets:
 
@@ -42,7 +42,7 @@ Targets:
 # native (macOS): libSystem + CoreAudio/AudioToolbox/AudioUnit/CoreFoundation/CoreServices
 zig build -Doptimize=ReleaseSafe
 
-# fully static Linux binary, no miniaudio:
+# fully static Linux binary (live device off at runtime):
 zig build -Dtarget=aarch64-linux-musl -Doptimize=ReleaseSafe -Dlive=false
 ```
 
@@ -94,8 +94,9 @@ What that means for ongoing cost:
 | `tools/refpeer.cpp` | low | Links the in-tree `libninjam_core.a` / `libninjam_net.a`, so it tracks this repo's CMake targets. If those targets move, this file is the thing to fix — and nothing else depends on it. |
 
 What is explicitly *not* maintained: multi-device input, per-channel sources,
-Linux live audio (the code path needs ALSA headers, but no machine here has
-been able to exercise it), and anything resembling a mixer or UI.
+Linux live audio (miniaudio is compiled with its ALSA/PulseAudio/JACK backends
+disabled, so there is no Linux audio backend to exercise), and anything
+resembling a mixer or UI.
 
 Things that will break it, and what to do:
 
@@ -117,9 +118,10 @@ depends on.
 verifies the vendored sources against their upstream pins, installs Zig 0.16.0,
 runs `zig build test`, builds the release binary, smoke-tests it against a
 committed evidence WAV, and on Linux cross-builds a static musl binary and
-asserts it is statically linked. macOS exercises the live-audio build
-(miniaudio + Core Audio); Linux builds without it (`-Dlive=false` by default
-there), so no ALSA headers are needed in CI.
+asserts it is statically linked. macOS exercises live audio (miniaudio +
+Core Audio); Linux builds default to `-Dlive=false`, which leaves the device
+unused at runtime. No ALSA/PulseAudio/JACK headers are needed anywhere,
+because those miniaudio backends are compiled out (`build.zig`).
 
 ## Layout
 
@@ -169,9 +171,12 @@ pthreads so the audio thread can block rather than spin.
   and shared (`session.encodeBlockFor`). Pulling per channel would hand each
   channel a different slice of the device ring and drift them apart in time; a
   unit test pins that invariant.
-* Live audio is developed and verified on macOS/Core Audio. On Linux the same
-  code path needs ALSA development headers at build time (`-Dlive=true`);
-  `-Dlive=false` builds everywhere and stays fully static.
+* Live audio is developed and verified on macOS/Core Audio only. On Linux,
+  miniaudio is compiled with `-DMA_NO_ALSA -DMA_NO_PULSEAUDIO -DMA_NO_JACK`
+  (`build.zig`), so no audio backend exists there: installing ALSA headers
+  does not enable live audio, and even `-Dlive=true` cannot open a device —
+  the session falls back to `--source`. `-Dlive=false` (the Linux default)
+  builds everywhere and stays fully static.
 
 ## Verification
 
