@@ -13,8 +13,11 @@ servers and clients.
 
 Requirements: CMake ≥ 3.20 and a C++17 compiler. Everything else
 (libogg/libvorbis, GLFW, Dear ImGui, miniaudio) is fetched automatically at
-configure time. On Linux, GLFW needs the usual X11/OpenGL dev packages
-(`libgl1-mesa-dev xorg-dev` on Debian/Ubuntu).
+configure time. On Linux, GLFW needs OpenGL and window-system dev packages.
+CI installs `libgl1-mesa-dev xorg-dev libwayland-dev libwayland-bin
+wayland-protocols libxkbcommon-dev` (Debian/Ubuntu names), which builds both
+of GLFW's Linux backends (X11 and Wayland); `libgl1-mesa-dev xorg-dev` alone
+is enough for an X11-only build.
 
 ```sh
 cmake -S . -B build
@@ -128,8 +131,12 @@ peak-hold with dB ticks, and Enter in any connection field connects.
 | `ninjam/server/` | the NINJAM server (`ninjamsrv`) |
 | `ninjam/imguiclient/` | **new** GUI client (Dear ImGui + GLFW, miniaudio audio) |
 | `ninjam/tests/` | unit tests for the protocol layer + the end-to-end session test |
+| `zclient/` | an independent NINJAM client in Zig (protocol conformance; own Zig build, not in CMake) |
+| `docs/` | wire-protocol specification (`PROTOCOL.md`) and investigation handoffs |
+| `tools/` | interval-lab drivers and analyzers behind `REPORT.md` |
+| `results/` | committed interval-lab run data behind `REPORT.md` |
+| `fuzz/` | wire-protocol fuzz harness and corpus |
 | `jmde/fx/reaninjam/` | the ReaNINJAM REAPER plug-in (needs the VST2 SDK; not in the CMake build) |
-| `clients/` | historical client source drops (archives; not built) |
 | `ninjam/{winclient,guiclient,cocoaclient,cursesclient,cmdclient--old,ninjamcast,autosong,cliplogcvt,ks,njasiodrv}/` | legacy client ports and tools (kept for reference; not built) |
 
 ## Notes on the 2026 revival

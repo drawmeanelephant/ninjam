@@ -31,8 +31,9 @@ jobs:
         run: ctest --test-dir build --build-config Release --output-on-failure
 
   # zclient: the Zig client. Builds and runs its unit tests on both platforms;
-  # live audio is compiled only where the backend is available (macOS), and
-  # the fully static Linux binary is cross-built to prove it stays dep-free.
+  # live audio defaults on only for macOS targets (CoreAudio) — the -Dlive
+  # option gates runtime device use, not compilation — and the fully static
+  # Linux binary is cross-built to prove it stays dep-free.
   zclient:
     strategy:
       fail-fast: false
