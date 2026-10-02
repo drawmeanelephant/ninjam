@@ -1,0 +1,8 @@
+tag=ppm2000r3 duration=120.0s markers=54 clock_rows=3546 trunc_rows=0
+  client 0 ppm=+0 status_ok=0.02s first_audio=16.03s first_marker=16.06s emitted=9 decoded=18 dropped=0/58 trunc=0/0B desync=0
+    start: audio=+0.000s first_iv=+0.000s iv_spos=2.0ms (ppm_eff=+0)
+  client 1 ppm=+2000 status_ok=0.02s first_audio=20.08s first_marker=20.02s emitted=10 decoded=18 dropped=0/60 trunc=0/0B desync=0
+    start: audio=+0.000s first_iv=+0.000s iv_spos=2.0ms (ppm_eff=+2000)
+  client 2 ppm=-2000 status_ok=0.02s first_audio=16.13s first_marker=16.09s emitted=9 decoded=18 dropped=0/58 trunc=0/0B desync=0
+    start: audio=+0.000s first_iv=+0.000s iv_spos=2.0ms (ppm_eff=-2000)
+  logs: /Users/tbuddy/dev/z/ninjam-002/results/ppm2000r3/ppm2000r3_markers.csv, /Users/tbuddy/dev/z/ninjam-002/results/ppm2000r3/ppm2000r3_clock.csv, /Users/tbuddy/dev/z/ninjam-002/results/ppm2000r3/ppm2000r3_summary.txt, /Users/tbuddy/dev/z/ninjam-002/results/ppm2000r3/ppm2000r3_clients.csv, /Users/tbuddy/dev/z/ninjam-002/results/ppm2000r3/ppm2000r3_trunc.csv, /Users/tbuddy/dev/z/ninjam-002/results/ppm2000r3/ppm2000r3_ivevents.csv, /Users/tbuddy/dev/z/ninjam-002/results/ppm2000r3/ppm2000r3_start.csv

@@ -14,12 +14,13 @@ runs. `./tools/run_interval_lab.sh --list` prints the scenario names;
 `--only NAME[,NAME]` runs a subset; `--quick` shortens the durations.
 
 There is a second, opt-in lane: `./tools/run_interval_lab.sh --probes` adds
-the nine short runs behind §2.3 (`startoff1s/2s/4s`, `ramp3000`, and
-`ppm500`..`ppm2500`), about 18 minutes on top. They are **not** in the default
-matrix because they feed exactly one number in this report - the onset bracket
-in §2.3 - and folding them in would slow every other reproduction to serve one
-table. Their logs are checked in under `results/`, so the analyzer picks them
-up either way and `--only=startoff1s` works without also passing `--probes`.
+the twenty short runs behind §2.3 (`startoff1s/2s/4s`, `ramp3000`,
+`ppm500`..`ppm2500`, and the #32 repeats and bisection rungs), about 40
+minutes on top. They are **not** in the default matrix because they feed
+exactly one number in this report - the onset bracket in §2.3 - and folding
+them in would slow every other reproduction to serve one table. Their logs
+are checked in under `results/`, so the analyzer picks them up either way and
+`--only=startoff1s` works without also passing `--probes`.
 
 ## Headline numbers
 
@@ -418,7 +419,8 @@ session origins alone and prints it beside the measured offset (§7c of
 `results/tables.md`), so the prediction and the measurement are independent.
 
 The onset is where `lead` grows past the pipeline's own close-to-decode
-latency, which the ppm ladder brackets from both sides:
+latency, which the ppm ladder brackets from both sides (one run per cell;
+the repeats and bisection behind #32 are below and in §7d):
 
 | lead | pairs at this lead that read one interval low | pairs at this lead that read two |
 |------|------------------------------------------|--------------------------------|
@@ -430,23 +432,48 @@ latency, which the ppm ladder brackets from both sides:
 | -48 ms and beyond | ppm1500 2<-1, ppm2000 2<-1, ppm2500 2<-1 | none |
 
   So the flip needs a lead of roughly **25-40 ms**, which is the pipeline's own
-  latency and not a property of start-up. The bracket is a range rather than a
-  point because rows at the *same* lead disagree - ppm1500 `2<-0` flips at
-  -24 ms where ppm1500 `0<-1` does not, and ppm2000 `2<-0` flips at -32 ms
-  where ppm2000 `0<-1` does not. A listener running slow and an emitter
-  running fast produce the same lead but not quite the same margin, and this
-  study does not resolve which side of that asymmetry sets the exact value.
-  The claim being made is only that the onset is a lead of tens of
-  milliseconds, and that it is a lead at all.
+  latency and not a property of start-up.
 
-  The disagreement is not confined to being untidy, though: `2<-0` reads *two*
-  intervals at -40 ms having read *one* at -32 ms, so `lead` is
-  non-monotonic for that pair. That is the reason the section above claims no
-  more than it does, and it is tracked in
-  [#32](https://github.com/drawmeanelephant/ninjam/issues/32) - whether the
-  margin really depends on which clock is wrong, or whether these rows are one
-  unlucky run each. Treat §7c's `lead` column as a first-order predictor, not
-  as a law at the margin.
+**[#32](https://github.com/drawmeanelephant/ninjam/issues/32) settled the
+marginal rows: the grid side of `lead` is exact, and inside the band the
+outcome is a run-to-run race, not a law.** Three measurements, all checked in
+under `results/` and printed by §7d of `results/tables.md`:
+
+  * **Repeats.** `ppm1500` and `ppm2000` were run five times each
+    (`ppm1500r2`..`r5`, `ppm2000r2`..`r5`). The outcome at a given lead moves
+    between runs: at -24 ms `0<-1` (fast emitter) flips three times out of
+    five and `2<-0` (slow listener) two out of five; at -32 ms, four out of
+    five and three out of five. The single runs behind the table above caught
+    different sides of the same race, and the per-direction "law" read into
+    them was two draws from it.
+  * **Bisection.** `ppm2250`, `ppm2500r2` and `ppm2750` close in on the
+    non-monotonic row. `2<-0` does not flip at -36 or -40 ms and does at
+    -44 ms, so there is no dead band above 2500 ppm - and no monotonic law
+    inside the band either. What the ladder shows with repeats in place is a
+    probabilistic transition: deterministic no-flip at -16 ms and milder
+    (and at every positive lead, in every run), deterministic flip at -44 ms
+    and beyond (15 of 15 runs), and anything between decided run to run.
+    `2<-1`, whose lead is twice the per-clock deviation, flips in all 15 of
+    its runs at -32 ms and beyond.
+  * **Instrumentation.** The harness now records every interval rollover with
+    a sample-interpolated wall time (`<tag>_ivevents.csv`), so both sides of
+    `lead` are measured rather than derived: the empirical margin between the
+    emitter's close and the listener's boundary at session position S agrees
+    with the formula to at most 0.6 ms, median 0.0, in every direction at
+    every rung. A slow listener's boundary and a fast emitter's close move
+    exactly as `origin + S/rate` says, so the issue's asymmetry hypothesis -
+    the two boundaries not being mirror images - is refuted where it was
+    testable: the margins ARE the same, and neither side of the grid is late.
+    What the lead has to beat is the pipeline's close-to-decode latency, and
+    that latency is what varies by a few milliseconds from run to run - enough
+    to decide, and enough to have made single runs at -24..-40 ms look like
+    structure.
+
+  The claim keeps the shape it had - the onset is a lead of tens of
+  milliseconds, and it is a lead at all - with two upgrades: §7c's `lead`
+  column is now anchored to a measurement instead of standing on the formula
+  alone, and the bracket has deterministic edges (-16 ms / -44 ms) around a
+  race in the middle that no single run should be read as resolving.
 
 **And it is the same mechanism as §2.1, not a second one.** The state is latched
 at the first marker and then holds, because the phase is fixed and only the
