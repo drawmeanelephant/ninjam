@@ -21,6 +21,32 @@ pub const EncodeError = error{
 
 pub const stb_vorbis = opaque {};
 
+/// Mirrors `stb_vorbis_alloc` (vendor/stb_vorbis.c:118). With a buffer set,
+/// stb_vorbis allocates nothing on its own: setup memory is bump-allocated
+/// from the front of the buffer, decode scratch from the back, and
+/// `setup_free` is a documented no-op (stb_vorbis.c:965). That disarms the
+/// #63 error path, where `vorbis_deinit` calls `free()` on pointers that
+/// setup never malloc'd when it bails out partway.
+const StbVorbisAlloc = extern struct {
+    alloc_buffer: ?[*]u8 = null,
+    alloc_buffer_length_in_bytes: c_int = 0,
+};
+
+/// `VORBIS_outofmem` from stb_vorbis's error enum (vendor/stb_vorbis.c:381).
+/// In buffer mode it is the only way an open can fail with a memory problem:
+/// every allocation site checks for exhaustion and reports this code.
+const vorbis_outofmem: c_int = 3;
+
+/// First buffer size offered to stb_vorbis. Legitimate NINJAM streams are
+/// mono libvorbis intervals whose setup fits far inside this; stb_vorbis
+/// checks at open time that setup + handle + decode scratch all fit, and
+/// fails cleanly with VORBIS_outofmem when they don't, so we grow and retry.
+const initial_decode_buffer = 256 * 1024;
+
+/// Refusal ceiling: no legitimate NINJAM peer encoder comes near this. A
+/// stream whose setup claims more is refused outright instead of decoded.
+const max_decode_buffer = 16 * 1024 * 1024;
+
 pub const StbVorbisInfo = extern struct {
     sample_rate: c_uint,
     channels: c_uint,
@@ -62,36 +88,59 @@ pub const Decoded = struct {
 pub const DecodeError = error{ OpenFailed, OutOfMemory };
 
 /// Decode a complete Ogg Vorbis stream (one interval's accumulated bytes).
+///
+/// The bytes can be anything a server put on the wire, so stb_vorbis never
+/// runs in its malloc-backed mode here (#63): every allocation — including
+/// everything the error paths free — lives in a caller-owned buffer, and a
+/// stream whose setup doesn't fit fails with error.OpenFailed, not a wild
+/// free().
 pub fn decodeMemory(alloc: std.mem.Allocator, ogg: []const u8) DecodeError!Decoded {
-    var err: c_int = 0;
-    const v = stb_vorbis_open_memory(ogg.ptr, @intCast(ogg.len), &err, null) orelse
-        return error.OpenFailed;
-    defer stb_vorbis_close(v);
-    const info = stb_vorbis_get_info(v);
-
-    var out: std.ArrayList(f32) = .empty;
-    errdefer out.deinit(alloc);
-
-    var chans: c_int = 0;
-    var outputs: [*][*]f32 = undefined;
+    var buf_len: usize = initial_decode_buffer;
     while (true) {
-        const n = stb_vorbis_get_frame_float(v, &chans, &outputs);
-        if (n == 0) break;
-        const ch: usize = @intCast(chans);
-        var i: usize = 0;
-        while (i < @as(usize, @intCast(n))) : (i += 1) {
-            var k: usize = 0;
-            while (k < ch) : (k += 1) {
-                try out.append(alloc, outputs[k][i]);
+        const buf = try alloc.alignedAlloc(u8, .@"16", buf_len);
+        const va = StbVorbisAlloc{
+            .alloc_buffer = buf.ptr,
+            .alloc_buffer_length_in_bytes = @intCast(buf_len),
+        };
+        var err: c_int = 0;
+        const v = stb_vorbis_open_memory(ogg.ptr, @intCast(ogg.len), &err, &va) orelse {
+            alloc.free(buf);
+            if (err == vorbis_outofmem and buf_len < max_decode_buffer) {
+                buf_len *= 2;
+                continue;
+            }
+            return error.OpenFailed;
+        };
+        // the decoder points into buf for its whole life, so it must be
+        // closed before the buffer is freed — declare free first
+        defer alloc.free(buf);
+        defer stb_vorbis_close(v);
+        const info = stb_vorbis_get_info(v);
+
+        var out: std.ArrayList(f32) = .empty;
+        errdefer out.deinit(alloc);
+
+        var chans: c_int = 0;
+        var outputs: [*][*]f32 = undefined;
+        while (true) {
+            const n = stb_vorbis_get_frame_float(v, &chans, &outputs);
+            if (n == 0) break;
+            const ch: usize = @intCast(chans);
+            var i: usize = 0;
+            while (i < @as(usize, @intCast(n))) : (i += 1) {
+                var k: usize = 0;
+                while (k < ch) : (k += 1) {
+                    try out.append(alloc, outputs[k][i]);
+                }
             }
         }
+        return .{
+            .alloc = alloc,
+            .srate = @intCast(info.sample_rate),
+            .channels = @intCast(info.channels),
+            .pcm = try out.toOwnedSlice(alloc),
+        };
     }
-    return .{
-        .alloc = alloc,
-        .srate = @intCast(info.sample_rate),
-        .channels = @intCast(info.channels),
-        .pcm = try out.toOwnedSlice(alloc),
-    };
 }
 
 // ---- encoder -----------------------------------------------------------------
@@ -238,3 +287,73 @@ test "vorbis encode -> decode roundtrip, non-silent" {
     const r = dec.rms();
     try testing.expect(r > 0.3);
 }
+
+// #63: a hostile server can flip one byte of an Ogg interval download and
+// abort the client (stb_vorbis's malloc-backed error path frees pointers it
+// never allocated). This is the auditor's minimised repro: 3889 deterministic
+// bytes, one byte at offset 164 flipped 0x00 -> 0x80.
+test "a corrupted Ogg is refused, not freed twice" {
+    const alloc = std.testing.allocator;
+    const enc = try Encoder.create(alloc, 44100, 0.0, 999);
+    defer enc.destroy();
+    var ogg: std.ArrayList(u8) = .empty;
+    defer ogg.deinit(alloc);
+    try enc.writeHeaders(&ogg);
+    var block: [960]f32 = undefined;
+    for (0..8) |i| {
+        for (&block, 0..) |*s, k| {
+            s.* = 0.4 * @sin(2.0 * std.math.pi * 220.0 * @as(f32, @floatFromInt(i * 960 + k)) / 44100.0);
+        }
+        try enc.encode(&block, &ogg);
+    }
+    try enc.flush(&ogg);
+    const bytes = try ogg.toOwnedSlice(alloc);
+    defer alloc.free(bytes);
+    try testing.expectEqual(@as(usize, 3889), bytes.len);
+    bytes[164] = 0x80;
+    // a refusal is the correct answer; a crash or a corrupted heap is not
+    try testing.expectError(error.OpenFailed, decodeMemory(alloc, bytes));
+}
+
+/// The auditor's 8-block 44.1 kHz mono stream with the Vorbis comment
+/// header's comment count replaced by `count`.
+fn streamWithCommentCount(alloc: std.mem.Allocator, count: u32) ![]u8 {
+    const enc = try Encoder.create(alloc, 44100, 0.0, 999);
+    defer enc.destroy();
+    var ogg: std.ArrayList(u8) = .empty;
+    errdefer ogg.deinit(alloc);
+    try enc.writeHeaders(&ogg);
+    var block: [960]f32 = undefined;
+    for (0..8) |i| {
+        for (&block, 0..) |*s, k| {
+            s.* = 0.4 * @sin(2.0 * std.math.pi * 220.0 * @as(f32, @floatFromInt(i * 960 + k)) / 44100.0);
+        }
+        try enc.encode(&block, &ogg);
+    }
+    try enc.flush(&ogg);
+    // the comment header is "\x03vorbis", u32 vendor length, vendor string,
+    // u32 comment count
+    const magic = "\x03vorbis";
+    const pos = std.mem.indexOf(u8, ogg.items, magic) orelse return error.TestUnexpectedResult;
+    const vendor_len = std.mem.readInt(u32, ogg.items[pos + magic.len ..][0..4], .little);
+    const count_pos = pos + magic.len + 4 + vendor_len;
+    if (count_pos + 4 > ogg.items.len) return error.TestUnexpectedResult;
+    std.mem.writeInt(u32, ogg.items[count_pos..][0..4], count, .little);
+    return ogg.toOwnedSlice(alloc);
+}
+
+// #63 companions found while hardening the refusal path: the comment count is
+// wire-controlled and stb_vorbis sized its slot array through an int, so a
+// count of 2^29 truncated the array to nothing and the per-comment loop then
+// marched out of it; a merely-large count exhausted the decoder's buffer
+// mid-list, which used to crash deinit on the uninitialized/NULL tail. All of
+// these must come back as clean refusals.
+test "hostile comment counts are refused, not crashed on" {
+    const alloc = std.testing.allocator;
+    for ([_]u32{ 0x20000000, 0x20000001, 1_000_000, 0x7FFFFFF0 }) |count| {
+        const bytes = try streamWithCommentCount(alloc, count);
+        defer alloc.free(bytes);
+        try testing.expectError(error.OpenFailed, decodeMemory(alloc, bytes));
+    }
+}
+
