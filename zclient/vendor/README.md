@@ -15,6 +15,39 @@ ecosystem. Each dependency is either a single file or a source-only tree.
 own CMake `FetchContent` pulls in for the reference client, so zclient and the
 reference client link the same encoder.
 
+## Local deltas
+
+`stb_vorbis.c` carries marked local security deltas on top of the pinned
+upstream commit (each hunk is tagged in-file; `refresh-vendor.sh` applies
+`patches/*.patch` after the SHA-256-verified download, and `--check` compares
+the committed tree against upstream + patches). They make stb_vorbis's error
+paths safe for wire-hostile input, which is a hard requirement for a client
+that decodes whatever a server puts on the wire:
+
+1. `setup_malloc` / `setup_temp_malloc` refuse non-positive sizes. Sizes are
+   wire-driven `int` products, so a hostile stream can wrap one negative
+   (e.g. a vendor/comment length near 2^31); the malloc-backed mode happened
+   to survive that (`malloc((size_t)negative)` fails), the caller-buffer mode
+   did not.
+2. The Vorbis comment count is bounded by `INT_MAX/8` and by the remaining
+   stream bytes before the slot array is allocated, so its `sizeof(char*) *
+   count` cannot truncate below the true size.
+3. When a comment-string allocation fails mid-list, the count is shrunk to
+   the entries that were actually initialized.
+4. `vorbis_deinit` no longer dereferences `comment_list` when the slot-array
+   allocation failed (the count is already set by then).
+5. The codebook header's `entries * dimensions` product is bounded by
+   `INT_MAX/sizeof(float)` before anything is allocated with it. The type-1
+   pre-expansion sizes its multiplicands array through an `int`, and a
+   spec-legal header can claim a product whose byte size wraps to a small
+   positive value — reachable from a ~2 KB stream via the ordered-run length
+   encoding — after which the expansion loop marches 4 GB of writes past the
+   array.
+
+All five reproduce on stb v1.22. Found by the wire-hostile audit of the
+downstream fart-app client (#63/#64/#66 there); the regression tests live
+downstream, where the decoder runs in caller-buffer mode.
+
 ## What was trimmed
 
 The Xiph trees ship as autotools/CMake/MSVC tarballs: ~329k lines of which

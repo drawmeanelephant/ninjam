@@ -126,6 +126,20 @@ fetch "$MINIAUDIO_URL" "$MINIAUDIO_SHA" "$OUT/miniaudio.h"
 echo "== stb_vorbis @ $STB_COMMIT =="
 fetch "$STB_URL" "$STB_SHA" "$OUT/stb_vorbis.c"
 
+# Local wire-safety deltas on top of the pinned upstream download (marked
+# in-file; see patches/ and the "Local deltas" section of this directory's
+# README). The SHA-256 pins above still verify the pristine upstream bytes;
+# what lands in the committed tree — and what --check compares against — is
+# upstream + these patches.
+apply_local_patches() { # root
+  local root=$1 p
+  for p in "$HERE/patches/"*.patch; do
+    [ -e "$p" ] || return 0
+    patch -s -d "$root" -p1 < "$p" || { echo "failed to apply $(basename "$p")" >&2; exit 1; }
+  done
+}
+apply_local_patches "$OUT"
+
 # Hand-written, not downloaded: the shim TU and the stb/miniaudio glue.
 echo "== local sources =="
 for f in miniaudio_impl.c stb_vorbis_impl.c; do
@@ -133,9 +147,14 @@ for f in miniaudio_impl.c stb_vorbis_impl.c; do
   cp "$HERE/$f" "$OUT/$f"
 done
 
-# README.md and refresh-vendor.sh live in vendor/ and are not downloaded.
+# README.md, refresh-vendor.sh and the local patches live in vendor/ and are
+# not downloaded.
 cp "$HERE/README.md" "$OUT/README.md"
 cp "$HERE/refresh-vendor.sh" "$OUT/refresh-vendor.sh"
+if compgen -G "$HERE/patches/*.patch" > /dev/null; then
+  mkdir -p "$OUT/patches"
+  cp "$HERE"/patches/*.patch "$OUT/patches/"
+fi
 
 if [ "$CHECK_ONLY" = "1" ]; then
   echo "== checking committed tree against regenerated =="
