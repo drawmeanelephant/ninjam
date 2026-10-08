@@ -75,9 +75,11 @@ To rebuild the trees from scratch, use the script rather than doing it by hand
                                # committed tree; non-zero exit on any drift
 ```
 
-`miniaudio_impl.c` and `stb_vorbis_impl.c` are hand-written (the shim TUs);
-the script copies them through unchanged and will refuse to run if either is
-missing.
+`miniaudio_impl.c` and `stb_vorbis_impl.c` are hand-written (the shim TUs),
+as is `vorbis_c.h` (the translate-c input header for the ogg/vorbis encoder
+API — Zig 0.17 removed `@cImport`, so `build.zig` runs it through a
+`std.Build.Step.TranslateC` instead). The script copies them through
+unchanged and will refuse to run if any is missing.
 
 `--check` runs in CI, and in `demo/run_demo.sh`. It answers "is `vendor/` still
 exactly what upstream ships?" without touching the working tree, so an accidental

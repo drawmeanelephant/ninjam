@@ -155,7 +155,7 @@ const UserEntry = struct {
 
 const DownloadState = struct {
     active: bool = false,
-    guid: [16]u8 = [_]u8{0} ** 16,
+    guid: [16]u8 = @splat(0),
     fourcc: u32 = 0,
     chidx: u8 = 0,
     user: UserEntry = .{},
@@ -190,7 +190,7 @@ const LocalChannel = struct {
     broadcast: bool = true,
     phase: f32 = 0,
     enc: ?*vorbis.Encoder = null,
-    guid: [16]u8 = [_]u8{0} ** 16,
+    guid: [16]u8 = @splat(0),
     begun: bool = false, // 0x83 sent
     pending: Buf,
     produced: u64 = 0,
@@ -259,7 +259,7 @@ pub const Session = struct {
     bpm: u16 = 0,
     bpi: u16 = 0,
 
-    users: [max_users]UserEntry = [_]UserEntry{.{}} ** max_users,
+    users: [max_users]UserEntry = @splat(.{}),
 
     downloads: [max_downloads]DownloadState = undefined,
     outputs: [max_outputs]OutputFile = undefined,
@@ -684,7 +684,7 @@ pub const Session = struct {
                         // nothing encoded at all this interval: silence marker
                         var f = Fixed{};
                         try proto.buildUploadIntervalBegin(.{
-                            .guid = [_]u8{0} ** 16,
+                            .guid = @splat(0),
                             .estsize = 0,
                             .fourcc = 0,
                             .chidx = @intCast(self.channelIndex(lc)),
@@ -700,7 +700,7 @@ pub const Session = struct {
                 // channel not broadcasting: periodic silence marker (§6.5.4)
                 var f = Fixed{};
                 try proto.buildUploadIntervalBegin(.{
-                    .guid = [_]u8{0} ** 16,
+                    .guid = @splat(0),
                     .estsize = 0,
                     .fourcc = 0,
                     .chidx = @intCast(self.channelIndex(lc)),

@@ -197,7 +197,7 @@ test "buf roundtrip" {
 
 test "fixed overflow" {
     var f = Fixed{};
-    try std.testing.expectError(error.Overflow, f.add(&([1]u8{0} ** 16385)));
+    try std.testing.expectError(error.Overflow, f.add(&@as([16385]u8, @splat(0))));
     try f.addU16le(0x0102);
     try std.testing.expectEqualSlices(u8, &[2]u8{ 2, 1 }, f.slice());
 }

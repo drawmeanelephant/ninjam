@@ -140,9 +140,9 @@ apply_local_patches() { # root
 }
 apply_local_patches "$OUT"
 
-# Hand-written, not downloaded: the shim TU and the stb/miniaudio glue.
+# Hand-written, not downloaded: the shim TUs and the translate-c input header.
 echo "== local sources =="
-for f in miniaudio_impl.c stb_vorbis_impl.c; do
+for f in miniaudio_impl.c stb_vorbis_impl.c vorbis_c.h; do
   [ -f "$HERE/$f" ] || { echo "missing local source $f" >&2; exit 1; }
   cp "$HERE/$f" "$OUT/$f"
 done

@@ -6,11 +6,9 @@
 
 const std = @import("std");
 
-const c = @cImport({
-    @cInclude("ogg/ogg.h");
-    @cInclude("vorbis/codec.h");
-    @cInclude("vorbis/vorbisenc.h");
-});
+// translate-c output over vendor/vorbis_c.h (build.zig TranslateC step):
+// the libogg/libvorbis encoder API, generated at build time.
+const c = @import("vorbis_c");
 
 pub const EncodeError = error{
     InitFailed,
@@ -356,4 +354,3 @@ test "hostile comment counts are refused, not crashed on" {
         try testing.expectError(error.OpenFailed, decodeMemory(alloc, bytes));
     }
 }
-
