@@ -39,7 +39,7 @@ mkdir -p "$RUNTIME" "$EVDIR"
 
 fail() { echo "DEMO FAIL: $*"; exit 1; }
 
-echo "== building zclient (zig 0.16) =="
+echo "== building zclient (zig 0.17) =="
 ( cd "$ZDIR" && zig build -Doptimize=ReleaseSafe ) || fail "zig build"
 ZCLIENT="$ZDIR/zig-out/bin/zclient"
 

@@ -6,7 +6,7 @@ under `ninjam/` is touched; the protocol is implemented from
 [`docs/PROTOCOL.md`](../docs/PROTOCOL.md) with the C++ client as ground truth
 where the spec is ambiguous.
 
-* Zig 0.16.0, no package manager, no ecosystems.
+* Zig 0.17.0, no package manager, no ecosystems.
 * Vendored dependencies, source only: `stb_vorbis.c` (decode),
   `libogg` + `libvorbis` (encode), `miniaudio.h` (live device).
 * Statically linked; no runtime dependency beyond system libc / system audio
@@ -88,7 +88,7 @@ What that means for ongoing cost:
 
 | Surface | Cost | Notes |
 | --- | --- | --- |
-| `src/` (Zig, ~3.5k lines) | low | Only changes if the protocol changes. Zig 0.16 churn is the main risk; it is pinned and CI would show it. |
+| `src/` (Zig, ~3.5k lines) | low | Only changes if the protocol changes. Zig 0.17 churn is the main risk; it is pinned and CI would show it. |
 | `vendor/` | very low | Fully reproducible. `vendor/refresh-vendor.sh --check` (run in CI) proves the tree still matches the pinned upstream downloads. Bumping a dependency is editing two lines in that script and rerunning it. |
 | `demo/run_demo.sh` | low, opt-in | Needs cmake, a C++ toolchain and network on first run (the reference client's ogg/vorbis come via `FetchContent`). It is not run in CI and is not a gate. |
 | `tools/refpeer.cpp` | low | Links the in-tree `libninjam_core.a` / `libninjam_net.a`, so it tracks this repo's CMake targets. If those targets move, this file is the thing to fix — and nothing else depends on it. |
@@ -115,7 +115,7 @@ depends on.
 ## Continuous integration
 
 `.github/workflows/ci.yml` has a `zclient` job alongside the C++ matrix: it
-verifies the vendored sources against their upstream pins, installs Zig 0.16.0,
+verifies the vendored sources against their upstream pins, installs Zig 0.17.0,
 runs `zig build test`, builds the release binary, smoke-tests it against a
 committed evidence WAV, and on Linux cross-builds a static musl binary and
 asserts it is statically linked. macOS exercises live audio (miniaudio +

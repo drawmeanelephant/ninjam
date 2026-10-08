@@ -380,8 +380,8 @@ test "config parse/build roundtrip (spec §10.2)" {
 test "userinfo records (spec §10.2 bob/guitar)" {
     const payload = [_]u8{
         0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
-        'b',  'o',  'b',  0x00,
-        'g',  'u',  'i',  't',  'a',  'r',  0x00,
+        'b',  'o',  'b',  0x00, 'g',  'u',
+        'i',  't',  'a',  'r',  0x00,
     };
     var sink = UserInfoSink{};
     try parseUserinfoRecords(&payload, &sink);
@@ -406,7 +406,12 @@ test "interval begin with username (spec §10.4)" {
         0x00, 0x00, 0x00, 0x00, // estsize
         0x4F, 0x47, 0x47, 0x76, // "OGGv"
         0x00, // chidx
-        'a',  'l',  'i',  'c',  'e',  0x00,
+        'a',
+        'l',
+        'i',
+        'c',
+        'e',
+        0x00,
     };
     const b = try parseIntervalBegin(&payload);
     try testing.expectEqual(@as(u32, FOURCC_OGGV), b.fourcc);
@@ -418,12 +423,12 @@ test "interval begin with username (spec §10.4)" {
 test "upload interval begin bytes (spec §10.4)" {
     var f = Fixed{};
     try buildUploadIntervalBegin(.{
-        .guid = [_]u8{0xA1} ++ [_]u8{0} ** 15,
+        .guid = [1]u8{0xA1} ++ @as([15]u8, @splat(0)),
         .estsize = 0,
         .fourcc = FOURCC_OGGV,
         .chidx = 0,
     }, &f);
-    const expect = [_]u8{0xA1} ++ [_]u8{0} ** 15 ++ [_]u8{ 0, 0, 0, 0 } ++ [_]u8{ 0x4F, 0x47, 0x47, 0x76 } ++ [_]u8{0x00};
+    const expect = [1]u8{0xA1} ++ @as([15]u8, @splat(0)) ++ [4]u8{ 0, 0, 0, 0 } ++ [4]u8{ 0x4F, 0x47, 0x47, 0x76 } ++ [1]u8{0x00};
     try testing.expectEqualSlices(u8, &expect, f.slice());
     try testing.expectEqual(@as(usize, 25), f.slice().len);
 }
@@ -431,7 +436,7 @@ test "upload interval begin bytes (spec §10.4)" {
 test "interval write roundtrip" {
     var f = Fixed{};
     try buildUploadIntervalWrite(.{
-        .guid = [_]u8{1} ** 16,
+        .guid = @splat(1),
         .flags = 1,
         .data = "OggS-payload",
     }, &f);
@@ -488,8 +493,8 @@ test "channel info bytes (spec §10.3)" {
 }
 
 test "zero guid helper" {
-    const zero = [_]u8{0} ** 16;
+    const zero: [16]u8 = @splat(0);
     try testing.expect(isZeroGuid(&zero));
-    const notzero = [_]u8{0} ** 15 ++ [_]u8{1};
+    const notzero = @as([15]u8, @splat(0)) ++ [1]u8{1};
     try testing.expect(!isZeroGuid(&notzero));
 }

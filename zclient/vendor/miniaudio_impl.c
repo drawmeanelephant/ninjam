@@ -46,6 +46,7 @@ int zc_device_open(void **out, unsigned int srate, unsigned int period_frames,
 {
     zc_device *self;
     ma_device_config config;
+    ma_device_id id;
     ma_result result;
 
     if (out == NULL || fill == NULL) {
@@ -72,14 +73,19 @@ int zc_device_open(void **out, unsigned int srate, unsigned int period_frames,
     config.dataCallback = zc_data_cb;
     config.pUserData = self;
 
+    /* Device selection goes through the config's pDeviceID pointers, not
+     * ma_device_init's first argument (that is the ma_context*). The ID is a
+     * string, which is correct for the string-ID backends this build can
+     * reach (CoreAudio, the null backend); every string member of the
+     * ma_device_id union sits at offset 0, same as custom.s. The ID must
+     * outlive ma_device_init, hence the function-scope `id` above. */
     if (device_id != NULL && device_id[0] != 0) {
-        ma_device_id id;
         memset(&id, 0, sizeof(id));
         strncpy(id.custom.s, device_id, sizeof(id.custom.s) - 1);
-        result = ma_device_init(&id, &config, &self->device);
-    } else {
-        result = ma_device_init(NULL, &config, &self->device);
+        config.playback.pDeviceID = &id;
+        config.capture.pDeviceID = &id;
     }
+    result = ma_device_init(NULL, &config, &self->device);
     if (result != MA_SUCCESS) {
         free(self);
         return -(int)result;

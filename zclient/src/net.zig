@@ -38,10 +38,10 @@ pub const Conn = struct {
         } else |_| {}
 
         // hostname: getaddrinfo (libc)
-        const host_z = std.heap.page_allocator.dupeZ(u8, host) catch return error.SystemResources;
+        const host_z = std.heap.page_allocator.dupeSentinel(u8, host, 0) catch return error.SystemResources;
         defer std.heap.page_allocator.free(host_z);
         var port_buf: [16]u8 = undefined;
-        const port_str = std.fmt.bufPrintZ(&port_buf, "{d}", .{port}) catch return error.UnknownHost;
+        const port_str = std.mem.printSentinel(&port_buf, "{d}", .{port}, 0) catch return error.UnknownHost;
 
         const hints: std.posix.addrinfo = .{
             .flags = .{},
@@ -55,7 +55,7 @@ pub const Conn = struct {
         };
         var res: ?*std.posix.addrinfo = null;
         const rc = std.posix.system.getaddrinfo(host_z.ptr, port_str.ptr, &hints, &res);
-        if (rc != @as(std.posix.system.EAI, @enumFromInt(0)) or res == null) return error.UnknownHost;
+        if (rc != @as(std.posix.system.EAI, @fromBackingInt(@intCast(0))) or res == null) return error.UnknownHost;
         defer if (res) |some| std.posix.system.freeaddrinfo(some);
 
         var it: ?*std.posix.addrinfo = res;

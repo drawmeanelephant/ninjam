@@ -45,6 +45,7 @@ const c_sources = [_][]const u8{
 fn addVendored(mod: *std.Build.Module, target: std.Build.ResolvedTarget) void {
     mod.link_libc = true;
     mod.addOptions("build_options", b_options);
+    mod.addImport("vorbis_c", vorbis_c_mod);
     mod.addIncludePath(b_path_vendor);
     mod.addIncludePath(vendor_libogg_include);
     mod.addIncludePath(vendor_libvorbis_include);
@@ -69,6 +70,7 @@ var vendor_libogg_include: std.Build.LazyPath = undefined;
 var vendor_libvorbis_include: std.Build.LazyPath = undefined;
 var vendor_libvorbis_lib: std.Build.LazyPath = undefined;
 var b_options: *std.Build.Step.Options = undefined;
+var vorbis_c_mod: *std.Build.Module = undefined;
 
 pub fn build(b: *std.Build) void {
     vendor_root = b.path("vendor");
@@ -87,6 +89,18 @@ pub fn build(b: *std.Build) void {
     b_options = b.addOptions();
     b_options.addOption(bool, "live", live);
 
+    // Zig 0.17 removed @cImport; the encoder API (ogg/vorbis/vorbisenc) comes
+    // from a translate-c step over the vendored headers instead. One module,
+    // shared by the exe and test modules via addVendored.
+    const vorbis_c = b.addTranslateC(.{
+        .root_source_file = b.path("vendor/vorbis_c.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    vorbis_c.addIncludePath(vendor_libogg_include);
+    vorbis_c.addIncludePath(vendor_libvorbis_include);
+    vorbis_c_mod = vorbis_c.createModule();
+
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
@@ -98,7 +112,7 @@ pub fn build(b: *std.Build) void {
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| run_cmd.addArgs(args);
+    run_cmd.addPassthruArgs();
     const run_step = b.step("run", "Run zclient");
     run_step.dependOn(&run_cmd.step);
 
