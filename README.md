@@ -131,7 +131,7 @@ peak-hold with dB ticks, and Enter in any connection field connects.
 | `ninjam/server/` | the NINJAM server (`ninjamsrv`) |
 | `ninjam/imguiclient/` | **new** GUI client (Dear ImGui + GLFW, miniaudio audio) |
 | `ninjam/tests/` | unit tests for the protocol layer + the end-to-end session test |
-| `zclient/` | an independent NINJAM client in Zig (protocol conformance; own Zig build, not in CMake) |
+| ~~`zclient/`~~ | moved out: the independent Zig NINJAM client now lives at [drawmeanelephant/zcn](https://github.com/drawmeanelephant/zcn) |
 | `docs/` | wire-protocol specification (`PROTOCOL.md`) and investigation handoffs |
 | `tools/` | interval-lab drivers and analyzers behind `REPORT.md` |
 | `results/` | committed interval-lab run data behind `REPORT.md` |

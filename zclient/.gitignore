@@ -1,6 +1,0 @@
-zig-out/
-zig-out-*/
-.zig-cache/
-demo/work/
-dump/
-*.log
