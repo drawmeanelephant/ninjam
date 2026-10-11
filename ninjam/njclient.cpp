@@ -724,6 +724,9 @@ NJClient::~NJClient()
 
 void NJClient::updateBPMinfo(int bpm, int bpi)
 {
+  // reject nonsense beat info from the wire: bpm<=0 divides by zero when
+  // computing the interval length, bpi<=0 in the metronome interval
+  if (bpm <= 0 || bpi <= 0) return;
   m_misc_cs.Enter();
   m_bpm=bpm;
   m_bpi=bpi;
