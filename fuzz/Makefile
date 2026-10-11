@@ -83,8 +83,8 @@ $(FUZZ_RUNTIME): $(LF_DIR)
 
 # --- fuzzer harness ---------------------------------------------------------
 FUZZ_OBJS = $(BUILD)/harness.o $(BUILD)/fuzz_mpb.o $(BUILD)/fuzz_netmsg.o \
-            $(BUILD)/fuzz_usercon.o $(BUILD)/fuzz_rng.o $(BUILD)/fuzz_sha.o \
-            $(BUILD)/fuzz_jnl_util.o
+            $(BUILD)/fuzz_netcond.o $(BUILD)/fuzz_usercon.o $(BUILD)/fuzz_rng.o \
+            $(BUILD)/fuzz_sha.o $(BUILD)/fuzz_jnl_util.o
 
 ninjam_fuzz: $(BUILD) $(FUZZ_OBJS) $(FUZZ_RUNTIME)
 	$(CXX) $(FUZZLINK) -o $(BUILD)/ninjam_fuzz $(FUZZ_OBJS) $(FUZZ_RUNTIME)
@@ -107,6 +107,9 @@ $(BUILD)/fuzz_mpb.o: $(ROOT)/ninjam/mpb.cpp
 $(BUILD)/fuzz_netmsg.o: $(ROOT)/ninjam/netmsg.cpp
 	$(CXX) $(FUZZFLAGS) -c -o $@ $<
 
+$(BUILD)/fuzz_netcond.o: $(ROOT)/ninjam/netcond.cpp
+	$(CXX) $(FUZZFLAGS) -c -o $@ $<
+
 $(BUILD)/fuzz_usercon.o: $(ROOT)/ninjam/server/usercon.cpp
 	$(CXX) $(FUZZFLAGS) -c -o $@ $<
 
@@ -123,6 +126,7 @@ $(BUILD)/fuzz_jnl_util.o: $(NETLIB)/util.cpp
 SRV_OBJS = $(NETLIB)/asyncdns.cpp $(NETLIB)/connection.cpp $(NETLIB)/listen.cpp \
            $(NETLIB)/util.cpp $(NETLIB)/httpget.cpp $(ROOT)/WDL/rng.cpp \
            $(ROOT)/WDL/sha.cpp $(ROOT)/ninjam/mpb.cpp $(ROOT)/ninjam/netmsg.cpp \
+           $(ROOT)/ninjam/netcond.cpp \
            $(ROOT)/ninjam/server/usercon.cpp $(ROOT)/ninjam/server/ninjamsrv.cpp
 
 ninjamsrv_asan: $(BUILD) $(SRV_OBJS)
@@ -140,7 +144,7 @@ corpus: gen_corpus.py
 FUZZ_TIME ?= 1800
 FUZZ_JOBS ?= 4
 run: ninjam_fuzz corpus
-	mkdir -p $(ROOT)/fuzz/artifacts
+	mkdir -p $(ROOT)/fuzz/artifacts $(ROOT)/fuzz/corpus/run
 	$(BUILD)/ninjam_fuzz $(ROOT)/fuzz/corpus/run $(ROOT)/fuzz/corpus/seeds \
 	  -dict=$(ROOT)/fuzz/ninjam.dict \
 	  -fork=$(FUZZ_JOBS) -ignore_crashes=1 -max_len=8192 -rss_limit_mb=4096 \
@@ -155,7 +159,7 @@ run: ninjam_fuzz corpus
 LEAK_DIR = $(ROOT)/fuzz/artifacts/leaks
 
 run-leak: ninjam_fuzz_leakcheck corpus
-	mkdir -p $(LEAK_DIR)
+	mkdir -p $(LEAK_DIR) $(ROOT)/fuzz/corpus/run
 	NINJAM_FUZZ_LEAK_DIR=$(LEAK_DIR) \
 	$(BUILD)/ninjam_fuzz_leakcheck $(ROOT)/fuzz/corpus/run $(ROOT)/fuzz/corpus/seeds \
 	  -dict=$(ROOT)/fuzz/ninjam.dict \
