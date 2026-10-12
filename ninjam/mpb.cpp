@@ -324,22 +324,24 @@ int mpb_server_userinfo_change_notify::parse_get_rec(int offs, int *isActive, in
   len -= hdrsize;
   unp=(char *)hdrbuf+hdrsize;
   cnp=unp;
-  while (*cnp)
+  while (len > 0 && *cnp) // bounds check first: username may lack a terminator
   {
     cnp++;
-    if (!len--) return 0;
+    len--;
   }
+  if (len <= 0) return 0;
   cnp++;
-  if (!len--) return 0;
+  len--;
 
   p=(unsigned char *)cnp;
-  while (*p)
+  while (len > 0 && *p) // bounds check first: channel name may lack a terminator
   {
     p++;
-    if (!len--) return 0;
+    len--;
   }
+  if (len <= 0) return 0;
   p++;
-  if (!len--) return 0;
+  len--;
 
   *isActive=(int)*hdrbuf++;
   *channelid=(int)*hdrbuf++;
