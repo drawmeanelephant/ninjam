@@ -3,8 +3,9 @@
 Reverse-engineered from the reference implementation in this repository
 (`ninjam/` client library, `ninjam/server/` server). This document describes
 everything an implementer needs to build an interoperable client or server
-without reading the C++ source. Every claim cites `file:line` against the
-`main` tree.
+without reading the C++ source. Every claim cites the function or constant
+in the reference tree that implements it, so citations stay valid as lines
+move.
 
 Source of truth:
 
@@ -12,7 +13,7 @@ Source of truth:
 |------|-------|
 | Message framing | `ninjam/netmsg.h`, `ninjam/netmsg.cpp` |
 | Message payloads (parse/build) | `ninjam/mpb.h`, `ninjam/mpb.cpp` |
-| Message type IDs | `ninjam/mpb.h:40-287` |
+| Message type IDs | `ninjam/mpb.h` (message-type classes) |
 | Client state machine | `ninjam/njclient.cpp`, `ninjam/njclient.h` |
 | Server connection handling | `ninjam/server/usercon.cpp`, `ninjam/server/usercon.h` |
 | Server main loop / config | `ninjam/server/ninjamsrv.cpp` |
@@ -28,22 +29,19 @@ exists.
 ## 1. Transport
 
 * **Transport is plain TCP.** The client opens a `JNL_Connection` (JNetLib TCP)
-  with 64 KiB send and receive buffers (`ninjam/njclient.cpp:899-902`); the
+  with 64 KiB send and receive buffers (`NJClient::Connect`); the
   server listens with `JNL_Listen` on the configured port and accepts with
-  2×64 KiB / 64 KiB buffers (`ninjam/server/ninjamsrv.cpp:964`,
-  `ninjam/server/ninjamsrv.cpp:983`).
-* **Default port is 2049** (TCP): client default `NJ_PORT`
-  (`ninjam/njclient.cpp:468`), server config default
-  (`ninjam/server/ninjamsrv.cpp:582`), example config `Port 2049`
+  2×64 KiB / 64 KiB buffers (`main`).
+* **Default port is 2049** (TCP): client default `NJ_PORT`, server config default
+  (`ReadConfig`), example config `Port 2049`
   (`ninjam/server/example.cfg:3`). A client may override the port with
-  `host:port` syntax (`ninjam/njclient.cpp:890-898`).
+  `host:port` syntax (`NJClient::Connect`).
 * **TCP_NODELAY is set** on every NINJAM connection
-  (`ninjam/netmsg.h:104-116`) — messages are latency-sensitive.
+  (`Net_Connection`) — messages are latency-sensitive.
 * There is no TLS and no proxy negotiation. The first bytes on the wire flow
   **server → client**: the server pushes an auth challenge the moment the
-  connection is accepted (`ninjam/server/usercon.cpp:114-143`, called from
-  `User_Group::AddConnection` at `ninjam/server/usercon.cpp:1093-1098`, which
-  the accept loop calls at `ninjam/server/ninjamsrv.cpp:998`).
+  connection is accepted (`User_Connection::User_Connection`, invoked by
+  `User_Group::AddConnection`, which the accept loop calls from `main`).
 * The protocol is byte-stream framed by NINJAM itself (section 2); TCP
   segmentation is irrelevant to parsing.
 
@@ -61,23 +59,21 @@ Every message on the wire is:
 
 * Header is **5 bytes**: a 1-byte type followed by the payload size as a
   **uint32 little-endian**. Encoding:
-  `ninjam/netmsg.cpp:53-73` (parse) and `ninjam/netmsg.cpp:75-88` (build).
+  `Net_Message::parseMessageHeader` (parse) and `Net_Message::makeMessageHeader` (build).
 * **All multi-byte integers anywhere in the protocol are little-endian.**
-  (`ninjam/netmsg.cpp:60-63` for the header size; every payload field is
-  serialized LSB-first, e.g. `ninjam/mpb.cpp:50-53`, `ninjam/mpb.cpp:511-519`.)
+  (`Net_Message::parseMessageHeader` for the header size; every payload field is
+  serialized LSB-first, e.g. `mpb_server_auth_challenge::parse`, `mpb_client_auth_user::parse`.)
 * Payload size limits:
-  * `size` must satisfy `0 <= size <= 16384` (`NET_MESSAGE_MAX_SIZE`,
-    `ninjam/netmsg.h:38`). A header with `size > 16384` is a framing error:
-    the receiver aborts the connection (`ninjam/netmsg.cpp:65`,
-    `ninjam/netmsg.cpp:183-186`).
+  * `size` must satisfy `0 <= size <= 16384` (`NET_MESSAGE_MAX_SIZE`). A header with `size > 16384` is a framing error:
+    the receiver aborts the connection (`Net_Message::parseMessageHeader`, `Net_Connection::Run`).
   * Type `0xFF` is `MESSAGE_INVALID` and is likewise rejected at the framing
-    layer (`ninjam/netmsg.h:44`, `ninjam/netmsg.cpp:65`).
+    layer (`MESSAGE_INVALID`, `Net_Message::parseMessageHeader`).
   * Consequently the largest possible audio chunk in an interval-write
     message is `16384 - 17 = 16367` bytes (§ 5.8/§ 5.11).
 * Messages are **self-delimiting**: a receiver reads 5 bytes, then exactly
   `size` bytes, then the next header. The reference receiver loops over
   available bytes, peeks, parses the header once, then consumes the payload
-  (`ninjam/netmsg.cpp:174-202`). Partial headers/payloads are buffered until
+  (`Net_Connection::Run`). Partial headers/payloads are buffered until
   complete; the receive state machine never interleaves messages.
 * There is no compression, no checksum, and no per-message acknowledgment.
 
@@ -85,9 +81,9 @@ Every message on the wire is:
 
 | Value | Name | Meaning |
 |-------|------|---------|
-| `0xFD` | `MESSAGE_KEEPALIVE` | Keepalive ping, sent automatically (`ninjam/netmsg.h:42`). See § 7. |
-| `0xFE` | `MESSAGE_EXTENDED` | **Defined but never used anywhere in the tree** (`ninjam/netmsg.h:43`; sole reference). Treat as reserved: receivers ignore unknown types (§ 7.2), so do not rely on it. |
-| `0xFF` | `MESSAGE_INVALID` | Illegal on the wire; framing error, disconnect (`ninjam/netmsg.h:44`, `ninjam/netmsg.cpp:65`). |
+| `0xFD` | `MESSAGE_KEEPALIVE` | Keepalive ping, sent automatically (sent automatically). See § 7. |
+| `0xFE` | `MESSAGE_EXTENDED` | **Defined but never used anywhere in the tree** (sole reference in the tree). Treat as reserved: receivers ignore unknown types (§ 7.2), so do not rely on it. |
+| `0xFF` | `MESSAGE_INVALID` | Illegal on the wire; framing error, disconnect (`MESSAGE_INVALID`, `Net_Message::parseMessageHeader`). |
 
 ### 2.2 String encoding
 
@@ -95,43 +91,42 @@ Strings are NUL-terminated byte strings, transmitted **including** the
 terminating NUL. No character-set conversion is performed anywhere; text is
 effectively UTF-8 pass-through. The server maps all received control
 characters (`< 0x20`) in relayed chat/topic text to spaces before rebroadcast
-(`ninjam/server/usercon.cpp:81-89`, applied at
-`ninjam/server/usercon.cpp:1316`, `ninjam/server/usercon.cpp:1348`,
-`ninjam/server/usercon.cpp:1415`). Usernames are further restricted: the
+(`sanitize_relay_text`, applied throughout `User_Group::onChatMessage`).
+Usernames are further restricted: the
 server rewrites any character that is not alphanumeric, `-`, `_`, `@`, or `.`
-to `_`, and truncates at 128 bytes (`MAX_NICK_LEN`,
-`ninjam/server/usercon.cpp:110`, `ninjam/server/usercon.cpp:334-346`).
+to `_`, and truncates at 128 bytes (`MAX_NICK_LEN`, applied in
+`User_Connection::OnRunAuth`).
 
 ## 3. Protocol version and capability negotiation
 
 * Protocol version range: `PROTO_VER_MIN = 0x00020000`,
   `PROTO_VER_MAX = 0x0002ffff`, `PROTO_VER_CUR = 0x00020000`
-  (`ninjam/mpb.h:35-37`).
+  (`ninjam/mpb.h`).
 * The server advertises `PROTO_VER_CUR` in the auth challenge
-  (`ninjam/server/usercon.cpp:125`). The client requires
+  (`User_Connection::User_Connection`). The client requires
   `PROTO_VER_MIN <= version < PROTO_VER_MAX` and otherwise disconnects with
   error "server is incorrect protocol version"
-  (`ninjam/njclient.cpp:1037-1043`).
+  (`NJClient::Run`).
 * The client sends its version in the auth user message; the server requires
   `PROTO_VER_MIN <= client_version <= PROTO_VER_MAX` and otherwise rejects
-  with "incorrect client version" (`ninjam/server/usercon.cpp:527`,
-  `ninjam/server/usercon.cpp:532`). Note the reference client always sends
-  `PROTO_VER_CUR` (`ninjam/njclient.cpp:1047`).
+  with "incorrect client version" (`User_Connection::Run`). Note the reference client always sends
+  `PROTO_VER_CUR` (`NJClient::Run`).
 * Capability words:
   * **`server_caps`** (challenge): bit 0 = a license agreement string is
-    appended to the challenge message (`ninjam/mpb.cpp:60-73`,
-    `ninjam/mpb.cpp:98-100`); **bits 8–15 = keepalive interval in seconds**
-    (`ninjam/njclient.cpp:1049` reads `(caps>>8)&0xff`; the server sets
+    appended to the challenge message (`mpb_server_auth_challenge::parse`, `mpb_server_auth_challenge::build`); **bits 8–15 = keepalive interval in seconds**
+    (`NJClient::Run` reads `(caps>>8)&0xff`; the server sets
     `caps = keepalive<<8`, clamped to 0..255, at
-    `ninjam/server/usercon.cpp:126-130`). All other bits are unused.
+    `User_Connection::User_Connection`). All other bits are unused;
+    receivers must ignore unknown bits so future flags stay
+    backwards-compatible.
   * **`client_caps`** (auth user): bit 0 = user agreed to the license
-    (`ninjam/mpb.h:175`; client sets it at `ninjam/njclient.cpp:1058`; server
-    checks it at `ninjam/server/usercon.cpp:528`). Bit 1 historically
-    indicated "client_version field present" (`ninjam/mpb.h:176-177`), but in
+    (`mpb_client_auth_user`; client sets it at `NJClient::Run`; server
+    checks it at `User_Connection::Run`). Bit 1 historically
+    indicated "client_version field present" (`mpb_client_auth_user`), but in
     this codebase the version field is **always** present on the wire
-    (`ninjam/mpb.cpp:532`, `ninjam/mpb.cpp:555-558`) and always parsed by the
-    server (`ninjam/mpb.cpp:509-519`). The reference client sends
-    `client_caps` of 0 or 1 only (`ninjam/njclient.cpp:1045-1059`); servers
+    (`mpb_client_auth_user::build`) and always parsed by the
+    server (`mpb_client_auth_user::parse`). The reference client sends
+    `client_caps` of 0 or 1 only (`NJClient::Run`); servers
     must not require bit 1, and clients may set it or not without effect.
 
 ## 4. Handshake and authentication
@@ -157,17 +152,17 @@ server                          client
 ```
 
 The server constructs and sends the challenge in the `User_Connection`
-constructor (`ninjam/server/usercon.cpp:114-143`), so it is the first data
+constructor (`User_Connection::User_Connection`), so it is the first data
 after the TCP handshake.
 
 ### 4.2 Challenge (server → client)
 
 See § 5.1 for the byte layout. The 8-byte challenge is random, generated with
-`WDL_RNG_bytes` (`ninjam/server/usercon.cpp:119`).
+`WDL_RNG_bytes` (`User_Connection::User_Connection`).
 
 ### 4.3 Password hashing (client)
 
-The client never sends the password. It computes (`ninjam/njclient.cpp:1063-1072`):
+The client never sends the password. It computes (`NJClient::Run`):
 
 ```
 inner  = SHA1( username_utf8 || ':' || password_utf8 )
@@ -176,108 +171,105 @@ reply  = SHA1( inner || challenge )        -- challenge = the 8 challenge bytes
 
 and places `reply` (20 bytes) in the auth user message. The server stores
 `SHA1(username + ":" + password)` per account
-(`ninjam/server/ninjamsrv.cpp:260-265`) and performs the identical second
+(`localUserInfoLookup`) and performs the identical second
 hash over `SHA1(user:pass) || challenge`, comparing against the 20 bytes the
-client sent (`ninjam/server/usercon.cpp:285-302`). A mismatch (or unknown
+client sent (`User_Connection::OnRunAuth`). A mismatch (or unknown
 user, when a password is required) is answered with `flag=0` "invalid
-login/password" and disconnect (`ninjam/server/usercon.cpp:294-302`).
+login/password" and disconnect (`User_Connection::OnRunAuth`).
 
 ### 4.4 Anonymous authentication
 
 A username beginning with `anonymous` (`anonymous` exactly, or
 `anonymous:desiredname`) is treated as anonymous **if the server allows it**
-(`ninjam/server/ninjamsrv.cpp:186-213`):
+(`localUserInfoLookup`):
 
 * `reqpass` is cleared, so the password hash is **not verified** — the client
   must still send a well-formed 20-byte hash field, but its contents are
-  ignored (`ninjam/server/usercon.cpp:295`).
+  ignored (`User_Connection::OnRunAuth`).
 * The effective username becomes `desiredname@<client-ip>` (or `anon@<ip>`
   when no name was requested). The desired name is truncated to 16
   characters and `@`/`.` are rewritten to `_`
-  (`ninjam/server/ninjamsrv.cpp:194-215`).
+  (`localUserInfoLookup`).
 * If the server has `AnonymousMaskIP yes`, the last octet of the IP in the
-  name is replaced with `x` (`ninjam/server/ninjamsrv.cpp:218-228`).
+  name is replaced with `x` (`localUserInfoLookup`).
 * Anonymous users get the privileges configured by `AnonymousUsersCanChat`
   (chat permission), `AnonymousUsers multi` (multiple logins), and always
   `PRIV_VOTE`; channel count comes from `MaxChannels`'s anonymous value
-  (`ninjam/server/ninjamsrv.cpp:230-231`).
+  (`localUserInfoLookup`).
 
 ### 4.5 License agreement
 
 If the server has a license configured (`ServerLicense`), the license text is
 appended to the challenge message and `server_caps` bit 0 is set
-(`ninjam/server/usercon.cpp:132-136`, `ninjam/mpb.cpp:98-100`). The client
-presents the text to the user (callback `ninjam/njclient.h:182-183`); if the
+(`User_Connection::User_Connection`, `mpb_server_auth_challenge::build`). The client
+presents the text to the user (callback `LicenseAgreementCallback`); if the
 user accepts, `client_caps` bit 0 is set in the auth user message
-(`ninjam/njclient.cpp:1053-1060`). A client that does not set the bit is
-rejected with "license not agreed to" (`ninjam/server/usercon.cpp:528`,
-`ninjam/server/usercon.cpp:532`).
+(`NJClient::Run`). A client that does not set the bit is
+rejected with "license not agreed to" (`User_Connection::Run`).
 
 While the license is pending, the connection's keepalive interval is relaxed
 to 45 s on both sides so the user has time to read
-(`ninjam/njclient.cpp:1053-1055`, `ninjam/server/usercon.cpp:134`).
+(`NJClient::Run`, `User_Connection::User_Connection`).
 
 ### 4.6 Auth user timeout
 
 The client must send `0x80` within **120 seconds** of connecting; afterwards
 the server replies `flag=0` "authorization timeout" and disconnects
-(`ninjam/server/usercon.cpp:501-514`). Caution for implementers: once the
+(`User_Connection::Run`). Caution for implementers: once the
 challenge has been answered, this window closes; but note also that *any*
 message that is not `0x80` received before authentication — including a
 keepalive, if the client idles longer than its keepalive interval — is
 treated as an invalid reply ("invalid authorization reply") and the
-connection is killed (`ninjam/server/usercon.cpp:526`,
-`ninjam/server/usercon.cpp:532`, `ninjam/server/usercon.cpp:541`). Send the
+connection is killed (`User_Connection::Run`). Send the
 auth user message promptly after receiving the challenge.
 
 ### 4.7 Auth reply (server → client)
 
 Failure: `flag = 0`, followed by a NUL-terminated human-readable error
 string. Known strings produced by the reference server
-(`ninjam/server/usercon.cpp:299`, `:398`, `:510`, `:532`):
+(`User_Connection::OnRunAuth`, `User_Connection::Run`):
 
 * `invalid login/password`
 * `server full` (account slots; `MaxUsers` minus hidden/reserved users,
-  `ninjam/server/usercon.cpp:382-401`)
+  `User_Connection::OnRunAuth`)
 * `authorization timeout`
 * `invalid authorization reply` / `incorrect client version` /
   `license not agreed to`
 
 The client displays the string and disconnects
-(`ninjam/njclient.cpp:1100-1108`).
+(`NJClient::Run`).
 
 Success: `flag = 1`, followed by a NUL-terminated string which is the
 **effective username** assigned by the server (it may differ from what the
 client sent: IP suffix, `-2` suffixes for multi-logins, sanitization —
-`ninjam/server/usercon.cpp:348-379`), followed by one byte `maxchan`: the
-number of channels this user may use (clamped to 32 = `MAX_USER_CHANNELS`
-`ninjam/server/usercon.h:42`; **0 in lobby mode**,
-`ninjam/server/usercon.cpp:183-195`). The client stores the effective
-username and `maxchan` (`ninjam/njclient.cpp:1094-1098`).
+`User_Connection::OnRunAuth`), followed by one byte `maxchan`: the
+number of channels this user may use (clamped to `MAX_USER_CHANNELS` = 32;
+**0 in lobby mode**,
+`User_Connection::SendAuthReply`). The client stores the effective
+username and `maxchan` (`NJClient::Run`).
 
 ### 4.8 Immediate post-auth server messages
 
 After a successful auth the server sends, in order
-(`ninjam/server/usercon.cpp:407-436`):
+(`User_Connection::OnRunAuth`):
 
 1. `0x01` auth reply (§ 4.7);
 2. `0x02` config change notify with current BPM/BPI
-   (`ninjam/server/usercon.cpp:411`, `:172-181`);
+   (`User_Connection::OnRunAuth`, `User_Connection::SendConfigChangeNotify`);
 3. `0x03` user info change notify listing every other active user's channels
-   (skipped in lobby mode; § 5.4, `ninjam/server/usercon.cpp:442-472`);
+   (skipped in lobby mode; § 5.4, `User_Connection::SendUserList`);
 4. `0xC0` chat `PRIVMSG` from `"*"` per line of the MOTD file, if configured
-   (`ninjam/server/usercon.cpp:416`, `:258-278`);
+   (`User_Connection::OnRunAuth`, `User_Connection::SendMOTDFile`);
 5. `0xC0` chat `TOPIC` with the current topic
-   (`ninjam/server/usercon.cpp:418-424`);
+   (`User_Connection::OnRunAuth`);
 6. (lobby only) `0xC0` chat `PRIVMSG` from `"*"` with lobby stats
-   (`ninjam/server/usercon.cpp:426-429`, `:235-256`);
+   (`User_Connection::OnRunAuth`, `User_Connection::SendPrivateModeStats`);
 7. broadcast `0xC0` chat `JOIN <username>` to all *other* users
-   (`ninjam/server/usercon.cpp:431-436`).
+   (`User_Connection::OnRunAuth`).
 
 The client, upon success, immediately sends `0x82` set channel info
-announcing its local channels (`ninjam/njclient.cpp:1085-1093`,
-`ninjam/njclient.cpp:2884-2913`), which the server relays to everyone else as
-`0x03` records (`ninjam/server/usercon.cpp:575-654`).
+announcing its local channels (`NJClient::Run`, `NJClient::NotifyServerOfChannelChange`), which the server relays to everyone else as
+`0x03` records (`User_Connection::Run`).
 
 ## 5. Message reference
 
@@ -299,14 +291,14 @@ Summary table (payload sizes exclude the 5-byte frame header):
 | `0xC0` | chat_message | both | 1 | up to 5 NUL strings |
 | `0xFD` | keepalive | both | 0 | exactly 0 |
 
-Minimum sizes are the values the parsers enforce (`ninjam/mpb.cpp:43`,
-`:129`, `:188`, `:228`, `:363`, `:437`, `:490`, `:568`, `:758`, `:815`, `:865`
+Minimum sizes are the values the parsers enforce (`mpb_server_auth_challenge::parse`,
+`mpb_server_auth_reply::parse`, `mpb_server_config_change_notify::parse`, `mpb_server_userinfo_change_notify::parse`, `mpb_server_download_interval_begin::parse`, `mpb_server_download_interval_write::parse`, `mpb_client_auth_user::parse`, `mpb_client_set_usermask::parse`, `mpb_client_upload_interval_begin::parse`, `mpb_client_upload_interval_write::parse`, `mpb_chat_message::parse`
 — noting `0x82`/`0x81`/`0x03` accept 0 and decode records lazily). `0xFD`
 keepalive frames are 5 bytes total (empty payload).
 
 ### 5.1 `0x00` server_auth_challenge
 
-`ninjam/mpb.cpp:40-121`. Fields in order:
+`mpb_server_auth_challenge::parse`/`build`. Fields in order:
 
 | Offset | Size | Type | Field |
 |--------|------|------|-------|
@@ -317,7 +309,7 @@ keepalive frames are 5 bytes total (empty payload).
 
 ### 5.2 `0x01` server_auth_reply
 
-`ninjam/mpb.cpp:126-181`.
+`mpb_server_auth_reply::parse`/`build`.
 
 | Offset | Size | Type | Field |
 |--------|------|------|-------|
@@ -327,7 +319,7 @@ keepalive frames are 5 bytes total (empty payload).
 
 ### 5.3 `0x02` server_config_change_notify
 
-`ninjam/mpb.cpp:185-221`. Exactly 4 bytes:
+`mpb_server_config_change_notify::parse`/`build`. Exactly 4 bytes:
 
 | Offset | Size | Type | Field |
 |--------|------|------|-------|
@@ -335,18 +327,16 @@ keepalive frames are 5 bytes total (empty payload).
 | 2 | 2 | uint16 LE | `beats_interval` — BPI (beats per interval) |
 
 Sent on join, on any BPM/BPI change (admin command, vote result, room
-creation), and on config reload (`ninjam/server/usercon.cpp:411`,
-`:1083-1091`, `:1242-1245`, `:1275-1278`, `:1522-1525`;
-`ninjam/server/ninjamsrv.cpp:1023`). The client recomputes its interval
+creation), and on config reload (`User_Connection::OnRunAuth`,
+`User_Group::SetConfig`, `User_Group::onChatMessage`, `main`). The client recomputes its interval
 length and starts audio on receipt
-(`ninjam/njclient.cpp:1112-1121`, `ninjam/njclient.cpp:725-732`,
-`ninjam/njclient.cpp:786-819`).
+(`NJClient::Run`, `NJClient::updateBPMinfo`, `NJClient::AudioProc`).
 
 ### 5.4 `0x03` server_userinfo_change_notify
 
-`ninjam/mpb.cpp:225-356` (record builder `:251-299`, record parser
-`:303-356`). A stream of concatenated records; empty payload = empty user
-list. Record layout:
+`mpb_server_userinfo_change_notify` (`parse`/`build` plus the record
+codec `build_add_rec`/`parse_get_rec`). A stream of concatenated records;
+empty payload = empty user list. Record layout:
 
 | Offset | Size | Type | Field |
 |--------|------|------|-------|
@@ -358,34 +348,34 @@ list. Record layout:
 | 6 | *n* | NUL string | `username` |
 | 6+n | *m* | NUL string | `channel name` |
 
-Semantics (`ninjam/njclient.cpp:1123-1258`): each record with `active=1`
+Semantics (`NJClient::Run`): each record with `active=1`
 creates or updates `(username, channelid)`; `active=0` removes it, and when a
 user's last channel is removed the user disappears
-(`ninjam/njclient.cpp:1237-1242`). The server sends the full list on join
-(`ninjam/server/usercon.cpp:442-472`), deltas on channel-info changes
-(`ninjam/server/usercon.cpp:609-652`), removals on user disconnect
-(`ninjam/server/usercon.cpp:1041-1064`), and additions on lobby→room
-migration (`ninjam/server/ninjamsrv.cpp:1071-1090`). If a user has no active
+(`NJClient::Run`). The server sends the full list on join
+(`User_Connection::SendUserList`), deltas on channel-info changes
+(`User_Connection::Run`), removals on user disconnect
+(`User_Group::Run`), and additions on lobby→room
+migration (`main`). If a user has no active
 channels, the server synthesizes one placeholder record (channel 0, empty
-name) so UIs show the user (`ninjam/server/usercon.cpp:465-468`) unless
+name) so UIs show the user (`User_Connection::SendUserList`) unless
 hidden users are allowed.
 
 ### 5.5 `0x04` server_download_interval_begin
 
-`ninjam/mpb.cpp:360-430`. Announces the start of one user's audio transfer
+`mpb_server_download_interval_begin::parse`/`build`. Announces the start of one user's audio transfer
 for one interval:
 
 | Offset | Size | Type | Field |
 |--------|------|------|-------|
 | 0 | 16 | bytes | `guid` — transfer ID |
-| 16 | 4 | uint32 LE | `estsize` — estimated total bytes (informational; reference client always sends 0, `ninjam/njclient.cpp:1495`, `ninjam/njclient.cpp:1542`) |
+| 16 | 4 | uint32 LE | `estsize` — estimated total bytes (informational; reference client always sends 0, `NJClient::Run`) |
 | 20 | 4 | uint32 LE | `fourcc` — codec tag, `"OGGv"` (§ 6.2); 0 = special (§ 6.1) |
 | 24 | 1 | byte | `chidx` — uploader's channel index |
-| 25 | *n* | NUL string | `username` — uploader's effective name (added by the server, `ninjam/server/usercon.cpp:704-713`) |
+| 25 | *n* | NUL string | `username` — uploader's effective name (added by the server, `User_Connection::Run`) |
 
 ### 5.6 `0x05` server_download_interval_write
 
-`ninjam/mpb.cpp:434-474`. One chunk of the transfer announced by § 5.5:
+`mpb_server_download_interval_write::parse`/`build`. One chunk of the transfer announced by § 5.5:
 
 | Offset | Size | Type | Field |
 |--------|------|------|-------|
@@ -394,11 +384,11 @@ for one interval:
 | 17 | *n* | bytes | raw Ogg Vorbis stream data (§ 6.2) |
 
 Byte-identical layout to `0x84` — the server forwards client uploads by
-rewriting only the type byte (`ninjam/server/usercon.cpp:798-799`).
+rewriting only the type byte (`User_Connection::Run`).
 
 ### 5.7 `0x80` client_auth_user
 
-`ninjam/mpb.cpp:487-561`.
+`mpb_client_auth_user::parse`/`build`.
 
 | Offset | Size | Type | Field |
 |--------|------|------|-------|
@@ -409,7 +399,7 @@ rewriting only the type byte (`ninjam/server/usercon.cpp:798-799`).
 
 ### 5.8 `0x81` client_set_usermask
 
-`ninjam/mpb.cpp:565-646`. Subscription state: one record per remote user the
+`mpb_client_set_usermask` (`parse`/`build`/`build_add_rec`/`parse_get_rec`). Subscription state: one record per remote user the
 client wants to hear. Record:
 
 | Offset | Size | Type | Field |
@@ -418,41 +408,41 @@ client wants to hear. Record:
 | n | 4 | uint32 LE | `channelmask` — bit *k* set = subscribe to channel *k* of that user |
 
 Empty payload is valid. Sending a mask of 0 for an existing entry unsubscribes
-(`ninjam/server/usercon.cpp:656-697`). The server routes interval data only
+(`User_Connection::Run`). The server routes interval data only
 to subscribed users (§ 6.4). The reference client sends this when
-auto-subscribing new users (`ninjam/njclient.cpp:1184-1190`) and when the
-local user toggles a subscription (`ninjam/njclient.cpp:2602-2640`).
+auto-subscribing new users (`NJClient::Run`) and when the
+local user toggles a subscription (`NJClient::SetUserChannelState`).
 
 ### 5.9 `0x82` client_set_channel_info
 
-`ninjam/mpb.cpp:650-751`. Announces the sender's own local channels. Layout:
+`mpb_client_set_channel_info` (`parse`/`build`/`build_add_rec`/`parse_get_rec`). Announces the sender's own local channels. Layout:
 
 | Offset | Size | Type | Field |
 |--------|------|------|-------|
-| 0 | 2 | uint16 LE | `mpisize` — per-record info size; **4** in this protocol (`ninjam/mpb.h:206`, `ninjam/mpb.cpp:685-690`) |
+| 0 | 2 | uint16 LE | `mpisize` — per-record info size; **4** in this protocol (`mpb_client_set_channel_info`, `mpb_client_set_channel_info::build_add_rec`) |
 | 2 | … | records | concatenation of per-channel records |
 
-Each record (`ninjam/mpb.cpp:676-712`):
+Each record (`mpb_client_set_channel_info::build_add_rec`):
 
 | Offset | Size | Type | Field |
 |--------|------|------|-------|
 | 0 | *n* | NUL string | `channel name` |
-| n | 2 | int16 LE | `volume` — dB × 10 (client sends 0; `ninjam/njclient.cpp:2907`) |
+| n | 2 | int16 LE | `volume` — dB × 10 (client sends 0; `NJClient::NotifyServerOfChannelChange`) |
 | n+2 | 1 | int8 | `pan` — −128..127 (client sends 0) |
 | n+3 | 1 | byte | `flags` — bit 0x80 = **inactive/filler channel** (§ 6.3) |
 
 The *i*-th record describes channel *i*. The server assigns `active = !(flags
-& 0x80)` (`ninjam/server/usercon.cpp:594`), ignores records beyond the user's
-`maxchan` (`ninjam/server/usercon.cpp:590`), treats all channels beyond the
-last record as removed (`ninjam/server/usercon.cpp:622-639`), and broadcasts
+& 0x80)` (`User_Connection::Run`), ignores records beyond the user's
+`maxchan` (`User_Connection::Run`), treats all channels beyond the
+last record as removed (`User_Connection::Run`), and broadcasts
 the delta as `0x03` records to everyone else
-(`ninjam/server/usercon.cpp:652`). The client re-sends this message after any
-local channel change (`ninjam/njclient.h:166`,
-`ninjam/njclient.cpp:2759`, `ninjam/njclient.cpp:2884-2913`).
+(`User_Connection::Run`). The client re-sends this message after any
+local channel change (`NJClient::DeleteLocalChannel` and friends call
+`NJClient::NotifyServerOfChannelChange`).
 
 ### 5.10 `0x83` client_upload_interval_begin
 
-`ninjam/mpb.cpp:755-808`. Exactly 25 bytes — same first 25 bytes as § 5.5
+`mpb_client_upload_interval_begin::parse`/`build`. Exactly 25 bytes — same first 25 bytes as § 5.5
 but **without** the username (the server knows the sender):
 
 | Offset | Size | Type | Field |
@@ -464,16 +454,17 @@ but **without** the username (the server knows the sender):
 
 ### 5.11 `0x84` client_upload_interval_write
 
-`ninjam/mpb.cpp:812-852`. Byte-identical layout to § 5.6.
+`mpb_client_upload_interval_write::parse`/`build`. Byte-identical layout to § 5.6.
 
 ### 5.12 `0xC0` chat_message
 
-`ninjam/mpb.cpp:862-920`. Payload is up to **5** NUL-terminated strings
-concatenated (`parms[0..4]`, `ninjam/mpb.h:276`). The reference builder
+`mpb_chat_message::parse`/`build`. Payload is up to **5** NUL-terminated strings
+concatenated (`parms[0..4]`, `mpb_chat_message`). The reference builder
 always emits all five slots, so trailing unused parameters appear as bare
-NUL bytes (`ninjam/mpb.cpp:891-917`); a parser must accept messages with
-fewer parameters present (`ninjam/mpb.cpp:873-880` stops at the end of the
-payload). Commands are case-sensitive (`ninjam/njclient.h:195`). See § 8 for
+NUL bytes (`mpb_chat_message::build`); a parser must accept messages with
+fewer parameters present (`mpb_chat_message::parse` stops at the end of the
+payload). Commands are case-sensitive (dispatch comments on `NJClient`
+in `ninjam/njclient.h`). See § 8 for
 the full command set.
 
 ## 6. Audio transfer model (intervals)
@@ -481,219 +472,225 @@ the full command set.
 ### 6.1 Musical timing and the interval
 
 * The server owns the tempo: BPM (beats/minute) and BPI (beats/interval),
-  delivered via `0x02` (`ninjam/server/usercon.cpp:172-181`). Defaults are
-  120 BPM / 8 BPI unless configured (`ninjam/server/ninjamsrv.cpp:589-590`,
-  `ninjam/server/example.cfg:39-40`); limits in the shipped config paths are
-  `MIN_BPM 40, MAX_BPM 400, MIN_BPI 2, MAX_BPI 128` (`ninjam/server/usercon.h:57-60`,
-  clamps at `ninjam/server/ninjamsrv.cpp:334-346`). (The `/bpm` chat admin
-  command separately accepts 20–400 BPM and 2–1024 BPI —
-  `ninjam/server/usercon.cpp:1501-1515` — an inconsistency in the reference
-  server; treat 40–400 / 2–128 as the safe range.)
+  delivered via `0x02` (`User_Connection::SendConfigChangeNotify`). Defaults are
+  120 BPM / 8 BPI unless configured (`ReadConfig`, `ninjam/server/example.cfg:39-40`); limits in the shipped config paths are
+  `MIN_BPM 40, MAX_BPM 400, MIN_BPI 2, MAX_BPI 64` (`ninjam/server/usercon.h`,
+  clamps in `ConfigOnToken`). (The `/bpm` and `/bpi` chat admin
+  commands separately accept 20–400 BPM and 2–1024 BPI —
+  `User_Group::onChatMessage` — an inconsistency in the reference
+  server; treat 40–400 / 2–64 as the safe range.)
 * Interval duration: `seconds = BPI × 60 / BPM`. The client computes the
   interval in samples as `bpi / (bpm/60) × samplerate`
-  (`ninjam/njclient.cpp:794-806`); the server computes the same interval in
+  (`NJClient::AudioProc`); the server computes the same interval in
   wall-clock ms as `60 000 × bpi / bpm`
-  (`ninjam/server/usercon.cpp:992`, `:1000`).
+  (`User_Group::Run`).
 * All users' intervals are aligned to the *server's* clock: the server merely
-  logs interval ticks (`ninjam/server/usercon.cpp:1012-1017`); clients align
+  logs interval ticks (`User_Group::Run`); clients align
   by starting their intervals when they receive/apply `0x02` and keeping time
-  locally (`ninjam/njclient.cpp:786-819`). An interoperable client must
+  locally (`NJClient::AudioProc`). An interoperable client must
   upload each interval's audio *during* that interval (see § 6.5) and play
   downloads one interval later (that is the NINJAM latency-hiding trick; the
-  client buffers decoded audio per channel, `ninjam/njclient.cpp:2508-2534`).
+  client buffers decoded audio per channel, `NJClient::on_new_interval`).
 
 ### 6.2 Audio encoding: Ogg Vorbis inside interval messages
 
 * The only codec in this protocol is Ogg Vorbis, tagged by fourcc
   `MAKE_NJ_FOURCC('O','G','G','v')` = `0x7647474F`
-  (`ninjam/njclient.cpp:37`, `ninjam/njclient.cpp:89`), which serialized
+  (`NJ_ENCODER_FMT_TYPE`), which serialized
   little-endian appears on the wire as the four ASCII bytes `O G G v`
   (`4F 47 47 76`).
 * The payload bytes of interval-write messages (§ 5.6/§ 5.11) are **raw,
   consecutive slices of a standard Ogg Vorbis bitstream**. The reference
   client encodes with libvorbis (VBR, quality derived from the channel
-  bitrate, random stream serial number; `ninjam/njclient.cpp:1504`, encoder
-  in `WDL/vorbisencdec.h:251-331`) and transmits the encoder output verbatim:
+  bitrate, random stream serial number; `NJClient::Run`, encoder
+  `VorbisEncoder` in `WDL/vorbisencdec.h`) and transmits the encoder output verbatim:
   the first chunks a receiver sees for a guid are the stream's Ogg pages
   (identification/comment/setup headers), followed by audio pages.
+* **The server treats `fourcc` as opaque.** It relays whatever value the
+  uploader sent to subscribers verbatim, and otherwise uses it only to
+  derive the filename extension when archiving intervals
+  (`User_Connection::Run`) and for the `fourcc = 0` special cases below.
+  Interoperable peers may send other fourccs without breaking the relay —
+  but note the reference client's decoder side ignores the announced
+  fourcc entirely: `NJClient::start_decode` tries only `OGGv` regardless
+  of what the begin message said (its `types[]` table has a single entry;
+  see the `todo` there). Anything that is not Ogg Vorbis will relay fine
+  but decode as garbage on reference clients.
 * A receiver reconstructs the stream by **concatenating the payload bytes of
   all interval-write chunks with the same guid, in arrival order**, into one
   buffer/file, and handing it to any Ogg Vorbis decoder
-  (`ninjam/njclient.cpp:3166-3177` — `RemoteDownload::Write` appends to a
+  (`RemoteDownload::Write` appends to a
   file and/or an in-memory buffer that feeds the decoder). There is no extra
   per-chunk framing beyond the message header.
 * Chunks are sized by the encoder's buffering: at least ~2 KiB per message in
-  normal mode (hard cap `MAX_ENC_BLOCKSIZE = 9216`, `ninjam/njclient.cpp:460-461`,
-  `:1572`), smaller granularity in live/voicechat mode
-  (`ninjam/njclient.cpp:1567-1570`, `:463-465`). An interop implementation
+  normal mode (`MIN_ENC_BLOCKSIZE`, hard cap `MAX_ENC_BLOCKSIZE = 9216`,
+  `NJClient::Run`), smaller granularity in live/voicechat mode
+  (`LIVE_PREBUFFER`/`LIVE_ENC_BLOCKSIZE1`/`LIVE_ENC_BLOCKSIZE2`,
+  `NJClient::Run`). An interop implementation
   may chunk however it likes within the 16367-byte payload limit.
-* **Special guids/fourccs** (`ninjam/server/usercon.cpp:716-751`,
-  `ninjam/njclient.cpp:1271-1308`):
+* **Special guids/fourccs** (`User_Connection::Run`,
+  `NJClient::Run`):
   * `guid = 0` (16 zero bytes) **and** `fourcc = 0`: a *silence marker*. The
     client sends `0x83` with zero guid/fourcc when a channel stops
-    broadcasting (`ninjam/njclient.cpp:1484-1498`). The server relays the
+    broadcasting (`NJClient::Run`). The server relays the
     begin to subscribers but tracks no transfer
-    (`ninjam/server/usercon.cpp:719`, `:768-778`). A client receiving it
+    (`User_Connection::Run`). A client receiving it
     schedules one silent interval for that channel
-    (`ninjam/njclient.cpp:1271-1284`).
+    (`NJClient::Run`).
   * `fourcc = 0` with nonzero guid: a reference to a previously transferred
     stream (session-mode replay); clients that have the guid cached re-use
-    it (`ninjam/njclient.cpp:1298-1308`). The server still relays it.
+    it (`NJClient::Run`). The server still relays it.
   * `guid != 0, fourcc != 0`: a normal audio transfer.
 
 ### 6.3 Channel flags
 
-Bit field used in `0x03`/`0x82` records (`ninjam/mpb.h:215`):
+Bit field used in `0x03`/`0x82` records (`mpb_client_set_channel_info`):
 
 | Bit | Meaning |
 |-----|---------|
 | `&1` | no default subscribe |
 | `&2` | "instamode" (live/voicechat: fixed tiny intervals, no interval boundary flush) |
 | `&4` | session mode (arbitrary-length chunks + `SESSION` chat messages, § 8) |
-| `&0x80` | filler: channel is inactive (`ninjam/server/usercon.cpp:594`, `ninjam/njclient.cpp:2909`) |
+| `&0x80` | filler: channel is inactive (`User_Connection::Run`, `NJClient::NotifyServerOfChannelChange`) |
 
 ### 6.4 Transfer routing and subscriptions
 
 The server relays uploads **only to subscribed users**
-(`ninjam/server/usercon.cpp:754-784`): for each other user with a
+(`User_Connection::Run`): for each other user with a
 `usermask` entry naming the uploader where `channelmask & (1<<chidx)`, the
 server rewrites the `0x83` begin into a `0x04` begin with the uploader's
 username appended and forwards it, registering a transfer state so subsequent
-`0x84` writes are forwarded as `0x05` (`ninjam/server/usercon.cpp:790-859`).
-Transfer state expires after 8 idle seconds (`TRANSFER_TIMEOUT`,
-`ninjam/server/usercon.h:112`, `ninjam/server/usercon.cpp:821`, `:851`); the
-client similarly drops downloads idle for 8 s (`DOWNLOAD_TIMEOUT`,
-`ninjam/njclient.h:285`, `ninjam/njclient.cpp:1344-1349`).
+`0x84` writes are forwarded as `0x05` (`User_Connection::Run`).
+Transfer state expires after 8 idle seconds (`TRANSFER_TIMEOUT`, `User_Connection::Run`); the
+client similarly drops downloads idle for 8 s (`DOWNLOAD_TIMEOUT`, `NJClient::Run`).
 
 ### 6.5 Client upload lifecycle
 
 For each broadcasting local channel, per interval
-(`ninjam/njclient.cpp:1446-1701`):
+(`NJClient::Run`):
 
 1. On the first encoded data of the interval, generate a fresh 16-byte
-   random guid (`ninjam/njclient.cpp:1511`) and build the `0x83` begin
+   random guid (`NJClient::Run`) and build the `0x83` begin
    (fourcc `OGGv`, `chidx`, `estsize` 0) — but hold it
-   (`ninjam/njclient.cpp:1538-1544`).
+   (`NJClient::Run`).
 2. When the first chunk of encoded audio is available, send the held `0x83`,
    then `0x84` chunks with `flags = 0` as data becomes available
-   (`ninjam/njclient.cpp:1567-1600`).
+   (`NJClient::Run`).
 3. At the interval boundary, flush the encoder and send the remaining chunks;
-   the last one has `flags & 1` set (`ninjam/njclient.cpp:1606-1645`).
+   the last one has `flags & 1` set (`NJClient::Run`).
    *An implementation must terminate every announced transfer with a
    flags&1 chunk* — otherwise transfer state lingers until the 8 s timeout.
 4. When a channel goes silent (stops broadcasting), send one `0x83` with
-   zero guid and fourcc 0 at the boundary (`ninjam/njclient.cpp:1484-1498`,
-   transition detection `ninjam/njclient.cpp:2489-2504`).
+   zero guid and fourcc 0 at the boundary (`NJClient::Run`,
+   transition detection `NJClient::on_new_interval`).
 
 The `0x82` channel-info message must be sent before/with the first uploads so
 other users have the channel in their user list (client does it right after
-auth success, `ninjam/njclient.cpp:1093`).
+auth success, `NJClient::Run`).
 
 ## 7. Keepalive and connection teardown
 
 ### 7.1 Keepalive
 
 * If nothing has been sent for `keepalive` seconds, either side sends
-  `0xFD` with an empty payload (`ninjam/netmsg.cpp:104-112`).
+  `0xFD` with an empty payload (`Net_Connection::Run`).
 * The interval comes from the server: `server_caps` bits 8–15
-  (`ninjam/server/usercon.cpp:126-130` → `ninjam/njclient.cpp:1049`, applied
-  at `ninjam/njclient.cpp:1061`); value 0 falls back to
-  `NET_CON_KEEPALIVE_RATE = 3` seconds (`ninjam/netmsg.h:46`,
-  `ninjam/netmsg.h:124-128`). The server's value is configured by
-  `SetKeepAlive` (`ninjam/server/ninjamsrv.cpp:359-364`,
-  `ninjam/server/example.cfg:55-57`).
+  (`User_Connection::User_Connection` → `NJClient::Run`, applied
+  at `NJClient::Run`); value 0 falls back to
+  `NET_CON_KEEPALIVE_RATE = 3` seconds (`NET_CON_KEEPALIVE_RATE`, `Net_Connection::SetKeepAlive`). The server's value is configured by
+  `SetKeepAlive` (`ConfigOnToken`, `ninjam/server/example.cfg:55-57`).
 * Receiving **any** message (including `0xFD`) refreshes the peer's liveness
-  timestamp (`ninjam/netmsg.cpp:211-214`).
+  timestamp (`Net_Connection::Run`).
 
 ### 7.2 Disconnect conditions
 
 | Condition | Detected by | Cite |
 |-----------|-------------|------|
-| No inbound message for `3 × keepalive` seconds | both sides — connection error | `ninjam/netmsg.cpp:215-218` |
-| Invalid frame header (type `0xFF`, size > 16384) | both sides | `ninjam/netmsg.cpp:65`, `:183-186` |
-| Send queue overflow (> 512 queued messages) | both sides | `ninjam/netmsg.h:40`, `ninjam/netmsg.cpp:228-235` |
-| TCP error/close | both sides | `ninjam/netmsg.cpp:293-297` |
-| No auth within 120 s of connect | server | `ninjam/server/usercon.cpp:501-514` |
-| Non-`0x80` message before auth (incl. keepalive) | server | `ninjam/server/usercon.cpp:526`, `:541-547` |
+| No inbound message for `3 × keepalive` seconds | both sides — connection error | `Net_Connection::Run` |
+| Invalid frame header (type `0xFF`, size > 16384) | both sides | `Net_Message::parseMessageHeader`, `Net_Connection::Run` |
+| Send queue overflow (> 512 queued messages) | both sides | `NET_CON_MAX_MESSAGES`, `Net_Connection::Send` |
+| TCP error/close | both sides | `Net_Connection::GetStatus` |
+| No auth within 120 s of connect | server | `User_Connection::Run` |
+| Non-`0x80` message before auth (incl. keepalive) | server | `User_Connection::Run` |
 | Failed auth / version / license / full | server → sends `0x01` flag=0 first | § 4.7 |
 
 * Unknown message types **after** auth are silently ignored by both sides
-  (`ninjam/njclient.cpp:1437-1439`; `ninjam/server/usercon.cpp:873-874`).
+  (`NJClient::Run`; `User_Connection::Run`).
   This includes `0xFD` keepalives on the application level — they are
   consumed by the connection layer's liveness logic.
 * On user disconnect the server broadcasts `0xC0` `PART <username>` and
   `0x03` removal records for all the user's channels
-  (`ninjam/server/usercon.cpp:1028-1065`).
+  (`User_Group::Run`).
 
 ## 8. Chat subsystem (`0xC0`)
 
 Parameters are positional (`parms[0]` first string). Commands are
 case-sensitive; usernames are matched case-insensitively
-(`ninjam/server/usercon.cpp:670`, `:1357`).
+(`User_Connection::Run`, `User_Group::onChatMessage`).
 
 ### 8.1 Client → server commands
 
 | Command |Parms| Behavior |
 |---------|-------|----------|
-| `MSG` | `<text>` | Broadcast text to everyone. Text may begin with `!` for special commands (below). Requires chat privilege. Server relays as `MSG <sender> <text>` (`ninjam/server/usercon.cpp:1111-1319`). |
-| `PRIVMSG` | `<username>` `<text>` | Private message. Exact (case-insensitive) match first, then partial match if the prefix ends at an `@` or contains one (`ninjam/server/usercon.cpp:1337-1396`). Relay: `PRIVMSG <sender> <text>`. |
-| `SESSION` | `<guid-hex>` `<chidx>` `<start> <len>` | Session-mode block descriptor; relayed with the sender's name inserted as parm 1 (`ninjam/server/usercon.cpp:1325-1336`). Sent by session-mode clients (`ninjam/njclient.cpp:1648-1670`). |
+| `MSG` | `<text>` | Broadcast text to everyone. Text may begin with `!` for special commands (below). Requires chat privilege. Server relays as `MSG <sender> <text>` (`User_Group::onChatMessage`). |
+| `PRIVMSG` | `<username>` `<text>` | Private message. Exact (case-insensitive) match first, then partial match if the prefix ends at an `@` or contains one (`User_Group::onChatMessage`). Relay: `PRIVMSG <sender> <text>`. |
+| `SESSION` | `<guid-hex>` `<chidx>` `<start> <len>` | Session-mode block descriptor; relayed with the sender's name inserted as parm 1 (`User_Group::onChatMessage`). Sent by session-mode clients (`NJClient::Run`). |
 
-`!`-commands inside `MSG` text (`ninjam/server/usercon.cpp:1117-1304`):
+`!`-commands inside `MSG` text (`User_Group::onChatMessage`):
 `!topic` (query topic), `!vote bpm <n>` / `!vote bpi <n>` (voting system,
 privilege-gated), and in lobby mode `!stat`, `!join <room>`; any other text
 starting with `!` gets a command-list reply.
 
 The reference server additionally documents `TOPIC <topic>` as a
-client→server command (`ninjam/mpb.h:281`), but this server's dispatcher does
+client→server command (`mpb_chat_message`), but this server's dispatcher does
 not handle it — topic changes go through the `ADMIN` command below; an
 incoming `TOPIC` falls through to the unknown branch and is dropped
-(`ninjam/server/usercon.cpp:1573-1575`).
+(`User_Group::onChatMessage`).
 
 ### 8.2 `ADMIN` (client → server)
 
-`ADMIN <command ...>` (`ninjam/server/usercon.cpp:1397-1572`). Commands:
+`ADMIN <command ...>` (`User_Group::onChatMessage`). Commands:
 `topic <text>` (priv `T`), `kick <user|prefix*>` (priv `K`), `bpm <n>` /
 `bpi <n>` (priv `B`), `stat` (private-mode stats), `join <room>` (lobby
 only). Errors are sent back as `MSG` from the empty username
-(`ninjam/server/usercon.cpp:1577-1584`).
+(`User_Group::onChatMessage`).
 
 ### 8.3 Server → client messages
 
 | Command | Parms | Meaning |
 |---------|-------|---------|
-| `MSG` | `<username>` `<text>` | Public message from `<username>`; empty username = server/system message (`ninjam/njclient.h:192`) |
-| `PRIVMSG` | `<username>` `<text>` | Private message; username `"*"` = server notice (MOTD, lobby stats, lobby help) (`ninjam/server/usercon.cpp:249-253`, `:269-273`, `:1147`, `:1159`) |
-| `TOPIC` | `<changed-by>` `<topic>` | Topic; empty `<changed-by>` on join/`!topic` query (`ninjam/server/usercon.cpp:208-212`, `:1119-1124`, `:1416-1421`) |
-| `JOIN` | `<username>` | A user joined (`ninjam/server/usercon.cpp:431-436`, `ninjam/server/ninjamsrv.cpp:1063-1069`) |
-| `PART` | `<username>` | A user left (`ninjam/server/usercon.cpp:1035-1039`, `ninjam/server/ninjamsrv.cpp:1057-1061`) |
-| `USERCOUNT` | `<count>` `<max>` | Sent once to a joining (status) client (`ninjam/server/usercon.cpp:214-232`) |
-| `SESSION` | `<username>` `<guid-hex>` `<chidx>` `<start> <len>` | Session descriptor from another user (`ninjam/njclient.cpp:1361-1399`) |
+| `MSG` | `<username>` `<text>` | Public message from `<username>`; empty username = server/system message (chat callback comments on `NJClient` in `ninjam/njclient.h`) |
+| `PRIVMSG` | `<username>` `<text>` | Private message; username `"*"` = server notice (MOTD, lobby stats, lobby help) (`User_Connection::SendPrivateModeStats`, `User_Connection::SendMOTDFile`, `User_Group::onChatMessage`) |
+| `TOPIC` | `<changed-by>` `<topic>` | Topic; empty `<changed-by>` on join/`!topic` query (`User_Connection::SendConnectInfo`, `User_Group::onChatMessage`) |
+| `JOIN` | `<username>` | A user joined (`User_Connection::OnRunAuth`, `main`) |
+| `PART` | `<username>` | A user left (`User_Group::Run`, `main`) |
+| `USERCOUNT` | `<count>` `<max>` | Sent once to a joining (status) client (`User_Connection::SendConnectInfo`) |
+| `SESSION` | `<username>` `<guid-hex>` `<chidx>` `<start> <len>` | Session descriptor from another user (`NJClient::Run`) |
 
 ## 9. Server configuration knobs that affect the wire
 
-From `ninjam/server/ninjamsrv.cpp:285-565` and `ninjam/server/example.cfg`:
+From `ConfigOnToken` and `ninjam/server/example.cfg`:
 
 | Directive | Wire effect |
 |-----------|-------------|
-| `Port <n>` | TCP listen port (default 2049) (`ninjam/server/ninjamsrv.cpp:289-294`, `:582`) |
-| `MaxUsers <n>` | Excess users rejected with `server full` (`ninjam/server/ninjamsrv.cpp:301-306`; `ninjam/server/usercon.cpp:382-401`) |
-| `MaxChannels <user> [anon]` | Bounds the `maxchan` byte of auth replies and per-user upload/channel limits (`ninjam/server/ninjamsrv.cpp:352-358`; `ninjam/server/usercon.cpp:187-191`, `:590`, `:702`) |
-| `ServerLicense <file>` | License text appended to `0x00`; `server_caps` bit 0; clients must echo agreement in `client_caps` bit 0 (`ninjam/server/ninjamsrv.cpp:375-398`; `ninjam/server/usercon.cpp:132-136`, `:528`) |
-| `SetKeepAlive <s>` | Keepalive seconds, sent in `server_caps` bits 8–15 (`ninjam/server/ninjamsrv.cpp:359-364`; `ninjam/server/usercon.cpp:126-130`) |
-| `DefaultBPM` / `DefaultBPI` | Initial values of `0x02` (`ninjam/server/ninjamsrv.cpp:333-346`, `:972-973`) |
-| `DefaultTopic <text>` | Text of the `TOPIC` chat message on join (`ninjam/server/ninjamsrv.cpp:347-351`; `ninjam/server/usercon.cpp:418-424`) |
-| `MOTDFile <file>` | Lines sent as `PRIVMSG` from `"*"` on join (`ninjam/server/ninjamsrv.cpp:317-321`; `ninjam/server/usercon.cpp:258-278`) |
-| `User <name> <pass> [privs]` | Account table; priv letters `*TBCKRMHVP` map to topic/bpm/chat/kick/reserve/multi-login/hidden/vote/show-private privileges (`ninjam/server/ninjamsrv.cpp:437-469`; flags `ninjam/server/usercon.h:47-56`). Default privs: chat + vote (`ninjam/server/ninjamsrv.cpp:467`) |
-| `AnonymousUsers no\|yes\|multi` | Enables anonymous auth; `multi` allows concurrent same-name logins (server appends `.N` to the name, `ninjam/server/usercon.cpp:361-368`) (`ninjam/server/ninjamsrv.cpp:481-492`) |
-| `AnonymousUsersCanChat yes\|no` | Grants chat privilege to anonymous users (`ninjam/server/ninjamsrv.cpp:515-525`, `:230`) |
-| `AnonymousMaskIP yes\|no` | Masks IP in anonymous effective names (`ninjam/server/ninjamsrv.cpp:493-503`, `:218-228`) |
-| `AllowHiddenUsers yes\|no` | Whether channel-less users appear (synthesized `0x03` record suppressed) (`ninjam/server/ninjamsrv.cpp:470-480`; `ninjam/server/usercon.cpp:465-468`, `:640-650`) |
-| `StatusUserPass <u> <p>` | Special status account: auths, receives user list + config/topic/usercount, then is disconnected — used by server-list pingers (`ninjam/server/ninjamsrv.cpp:237-251`, `:295-300`; `ninjam/server/usercon.cpp:305-329`) |
-| `ACL <cidr> allow\|deny\|reserve` | Connection-level filtering/reserved slots; no message-level effect (`ninjam/server/ninjamsrv.cpp:399-436`, `:987-999`) |
-| `SetVotingThreshold <n>` / `SetVotingVoteTimeout <s>` | Governs `!vote` acceptance and the `0x02` broadcast on a successful vote (`ninjam/server/ninjamsrv.cpp:365-374`; `ninjam/server/usercon.cpp:1165-1295`) |
-| `PrivateGroupMode` / `PrivateGroupLobbySize` / `PrivateGroupAllowChat` / `PrivateGroupLobbyMOTDFile` / `PrivateGroupPublicPrefix` | Lobby mode: joining users get `maxchan = 0`, no user list, `!join <room>` migrates them to a new `User_Group` (fresh `0x01`/`0x02`/userlist/topic sequence) (`ninjam/server/ninjamsrv.cpp:526-561`, `:1004-1101`; `ninjam/server/usercon.cpp:189`, `:444`) |
-| `SessionArchive <path> <minutes>` | Server-side recording of interval uploads to disk; no wire effect (`ninjam/server/ninjamsrv.cpp:322-327`; `ninjam/server/usercon.cpp:726-748`) |
+| `Port <n>` | TCP listen port (default 2049) (`ConfigOnToken`, `ReadConfig`) |
+| `MaxUsers <n>` | Excess users rejected with `server full` (`ConfigOnToken`; `User_Connection::OnRunAuth`) |
+| `MaxChannels <user> [anon]` | Bounds the `maxchan` byte of auth replies and per-user upload/channel limits (`ConfigOnToken`; `User_Connection::SendAuthReply`, `User_Connection::Run`) |
+| `ServerLicense <file>` | License text appended to `0x00`; `server_caps` bit 0; clients must echo agreement in `client_caps` bit 0 (`ConfigOnToken`; `User_Connection::User_Connection`, `User_Connection::Run`) |
+| `SetKeepAlive <s>` | Keepalive seconds, sent in `server_caps` bits 8–15 (`ConfigOnToken`; `User_Connection::User_Connection`) |
+| `DefaultBPM` / `DefaultBPI` | Initial values of `0x02` (`ConfigOnToken`, `main`) |
+| `DefaultTopic <text>` | Text of the `TOPIC` chat message on join (`ConfigOnToken`; `User_Connection::OnRunAuth`) |
+| `MOTDFile <file>` | Lines sent as `PRIVMSG` from `"*"` on join (`ConfigOnToken`; `User_Connection::SendMOTDFile`) |
+| `User <name> <pass> [privs]` | Account table; priv letters `*TBCKRMHVP` map to topic/bpm/chat/kick/reserve/multi-login/hidden/vote/show-private privileges (`ConfigOnToken`; flags `PRIV_*` in `ninjam/server/usercon.h`). Default privs: chat + vote (`ConfigOnToken`) |
+| `AnonymousUsers no\|yes\|multi` | Enables anonymous auth; `multi` allows concurrent same-name logins (server appends `.N` to the name, `User_Connection::OnRunAuth`) (`ConfigOnToken`) |
+| `AnonymousUsersCanChat yes\|no` | Grants chat privilege to anonymous users (`ConfigOnToken`, `localUserInfoLookup`) |
+| `AnonymousMaskIP yes\|no` | Masks IP in anonymous effective names (`ConfigOnToken`, `localUserInfoLookup`) |
+| `AllowHiddenUsers yes\|no` | Whether channel-less users appear (synthesized `0x03` record suppressed) (`ConfigOnToken`; `User_Connection::SendUserList`, `User_Connection::Run`) |
+| `StatusUserPass <u> <p>` | Special status account: auths, receives user list + config/topic/usercount, then is disconnected — used by server-list pingers (`localUserInfoLookup`, `ConfigOnToken`; `User_Connection::OnRunAuth`) |
+| `ACL <cidr> allow\|deny\|reserve` | Connection-level filtering/reserved slots; no message-level effect (`ConfigOnToken`, `main`) |
+| `SetVotingThreshold <n>` / `SetVotingVoteTimeout <s>` | Governs `!vote` acceptance and the `0x02` broadcast on a successful vote (`ConfigOnToken`; `User_Group::onChatMessage`) |
+| `PrivateGroupMode` / `PrivateGroupLobbySize` / `PrivateGroupAllowChat` / `PrivateGroupLobbyMOTDFile` / `PrivateGroupPublicPrefix` | Lobby mode: joining users get `maxchan = 0`, no user list, `!join <room>` migrates them to a new `User_Group` (fresh `0x01`/`0x02`/userlist/topic sequence) (`ConfigOnToken`, `main`; `User_Connection::SendAuthReply`, `User_Connection::SendUserList`) |
+| `SessionArchive <path> <minutes>` | Server-side recording of interval uploads to disk; no wire effect (`ConfigOnToken`; `User_Connection::Run`) |
 
 ## 10. Worked transcript
 
@@ -866,78 +863,67 @@ here).
 
 ## Appendix A: Exhaustiveness of the message set
 
-All message IDs are defined in one place, `ninjam/mpb.h:40-287` (plus the
-framing-level types in `ninjam/netmsg.h:42-44`). Grepping the entire tree for
+All message IDs are defined in one place: the `mpb_*` classes in
+`ninjam/mpb.h`, plus the framing-level types `MESSAGE_KEEPALIVE` /
+`MESSAGE_EXTENDED` / `MESSAGE_INVALID` in `ninjam/netmsg.h`. Grepping the entire tree for
 `MESSAGE_` usage outside the definitions yields exactly these files:
 `ninjam/netmsg.cpp` (framing: invalid/keepalive), `ninjam/njclient.cpp`
-(client dispatch), `ninjam/server/usercon.cpp` (server dispatch), and
-`ninjam/tests/test_core.cpp` (round-trip tests of the mpb codecs). No other
+(client dispatch), and `ninjam/server/usercon.cpp` (server dispatch). No other
 translation unit constructs or inspects protocol messages.
 
 ### A.1 Client sends (`m_netcon->Send` / `ChatMessage_Send`)
 
-| Site | Message |
+| Function | Message |
 |------|---------|
-| `ninjam/njclient.cpp:1074` | `0x80` auth user |
-| `ninjam/njclient.cpp:1189` | `0x81` usermask (auto-subscribe) |
-| `ninjam/njclient.cpp:2619`, `:2639` | `0x81` usermask (subscribe toggle) |
-| `ninjam/njclient.cpp:1496` | `0x83` begin — silence marker (zero guid/fourcc) |
-| `ninjam/njclient.cpp:1590`, `:1638` | `0x83` begin — audio (built `:1538-1544`, held until first data) |
-| `ninjam/njclient.cpp:1596`, `:1643` | `0x84` write |
-| `ninjam/njclient.cpp:1669` → `:1773` | `0xC0` chat (`SESSION`) |
-| `ninjam/njclient.cpp:1773` | `0xC0` chat (public API `ChatMessage_Send`, `njclient.h:189`) |
-| `ninjam/netmsg.cpp:108-110` | `0xFD` keepalive (automatic) |
+| `NJClient::Run` | `0x80` auth user |
+| `NJClient::Run` | `0x81` usermask (auto-subscribe) |
+| `NJClient::SetUserChannelState` | `0x81` usermask (subscribe toggle) |
+| `NJClient::Run` | `0x83` begin — silence marker (zero guid/fourcc) |
+| `NJClient::Run` | `0x83` begin — audio (built in `NJClient::Run`, held until first data) |
+| `NJClient::Run` | `0x84` write |
+| `NJClient::Run` → `NJClient::ChatMessage_Send` | `0xC0` chat (`SESSION`) |
+| `NJClient::ChatMessage_Send` | `0xC0` chat (public API) |
+| `Net_Connection::Run` | `0xFD` keepalive (automatic) |
 
-### A.2 Client receives (dispatch switch, `ninjam/njclient.cpp:1030-1440`)
+### A.2 Client receives (`NJClient::Run`)
 
-| Case | Message |
-|------|---------|
-| `:1032` | `0x00` challenge |
-| `:1080` | `0x01` auth reply |
-| `:1112` | `:1112` | `0x02` config change |
-| `:1123` | `0x03` userinfo change |
-| `:1260` | `0x04` download begin |
-| `:1314` | `0x05` download write |
-| `:1355` | `0xC0` chat |
-| `:1437-1439` | everything else (incl. `0xFD`): ignored |
+The dispatch switch in `NJClient::Run` handles `0x00` challenge, `0x01`
+auth reply, `0x02` config change, `0x03` userinfo change, `0x04` download
+begin, `0x05` download write and `0xC0` chat; everything else (including
+`0xFD`) is ignored.
 
 ### A.3 Server sends
 
 | Site | Message |
 |------|---------|
-| `ninjam/server/usercon.cpp:138` | `0x00` challenge (on connect) |
-| `ninjam/server/usercon.cpp:194` | `0x01` auth success (`SendAuthReply`; reused for room migration at `ninjam/server/ninjamsrv.cpp:1092`) |
-| `ninjam/server/usercon.cpp:300`, `:398`, `:510`, `:541` | `0x01` auth failures |
-| `ninjam/server/usercon.cpp:179`, `:203` | `0x02` config (`SendConfigChangeNotify` / `SendConnectInfo`) |
-| `ninjam/server/usercon.cpp:1090` (`SetConfig`), `:1245`, `:1278` (votes), `:1525` (admin bpm/bpi) | `0x02` config broadcast |
-| `ninjam/server/usercon.cpp:471` | `0x03` user list (`SendUserList`; also `ninjam/server/ninjamsrv.cpp:1093`) |
-| `ninjam/server/usercon.cpp:652`, `:1064`; `ninjam/server/ninjamsrv.cpp:1089` | `0x03` delta broadcasts |
-| `ninjam/server/usercon.cpp:778` | `0x04` download begin (relay) |
-| `ninjam/server/usercon.cpp:842` | `0x05` download write (relay, retyped at `:798`) |
-| `ninjam/server/usercon.cpp:208-212` (`SendConnectInfo`), `:418-424` (join), `:1119-1124` (`!topic`), `:1416-1421` (`ADMIN topic`) | `0xC0` `TOPIC` |
-| `ninjam/server/usercon.cpp:214-232` | `0xC0` `USERCOUNT` |
-| `ninjam/server/usercon.cpp:249-253`, `:269-273`, `:426-429`, `:1128-1163` | `0xC0` `PRIVMSG` from `"*"` (MOTD, lobby stats/help) |
-| `ninjam/server/usercon.cpp:431-436`, `ninjam/server/ninjamsrv.cpp:1063-1069` | `0xC0` `JOIN` |
-| `ninjam/server/usercon.cpp:1035-1039`, `ninjam/server/ninjamsrv.cpp:1057-1061` | `0xC0` `PART` |
-| `ninjam/server/usercon.cpp:1306-1319` (`MSG` relay), `:1172`, `:1197`, `:1232-1258`, `:1301`, `:1394`, `:1462-1465`, `:1506`, `:1514`, `:1577-1584`; `ninjam/server/ninjamsrv.cpp:1046-1050` | `0xC0` `MSG` (broadcast/system) |
-| `ninjam/server/usercon.cpp:1337-1396` | `0xC0` `PRIVMSG` relay |
-| `ninjam/server/usercon.cpp:1325-1336` | `0xC0` `SESSION` relay |
+| `User_Connection::User_Connection` | `0x00` challenge (on connect) |
+| `User_Connection::SendAuthReply` | `0x01` auth success (reused for room migration at `main`) |
+| `User_Connection::OnRunAuth`, `User_Connection::Run` | `0x01` auth failures |
+| `User_Connection::SendConfigChangeNotify`, `User_Connection::SendConnectInfo` | `0x02` config |
+| `User_Group::SetConfig`, `User_Group::onChatMessage` (votes, admin bpm/bpi) | `0x02` config broadcast |
+| `User_Connection::SendUserList` | `0x03` user list (also `main`) |
+| `User_Connection::Run`, `User_Group::Run`; `main` | `0x03` delta broadcasts |
+| `User_Connection::Run` | `0x04` download begin (relay) |
+| `User_Connection::Run` | `0x05` download write (relay; only the type byte is rewritten) |
+| `User_Connection::SendConnectInfo`, `User_Connection::OnRunAuth` (join), `User_Group::onChatMessage` (`!topic`, `ADMIN topic`) | `0xC0` `TOPIC` |
+| `User_Connection::SendConnectInfo` | `0xC0` `USERCOUNT` |
+| `User_Connection::SendPrivateModeStats`, `User_Connection::SendMOTDFile`, `User_Connection::OnRunAuth`, `User_Group::onChatMessage` | `0xC0` `PRIVMSG` from `"*"` (MOTD, lobby stats/help) |
+| `User_Connection::OnRunAuth`, `main` | `0xC0` `JOIN` |
+| `User_Group::Run`, `main` | `0xC0` `PART` |
+| `User_Group::onChatMessage`, `main` | `0xC0` `MSG` (broadcast/system) |
+| `User_Group::onChatMessage` | `0xC0` `PRIVMSG` relay |
+| `User_Group::onChatMessage` | `0xC0` `SESSION` relay |
 
-### A.4 Server receives (`User_Connection::Run`, `ninjam/server/usercon.cpp:475-880`)
+### A.4 Server receives (`User_Connection::Run`)
 
-| Case | Message |
-|------|---------|
-| `:521-568` | `0x80` pre-auth (any other type pre-auth → reject, `:526`) |
-| `:575` | `0x82` channel info |
-| `:656` | `0x81` usermask |
-| `:698` | `0x83` upload begin |
-| `:790` | `0x84` upload write |
-| `:863` | `0xC0` chat |
-| `:873-874` | everything else (incl. `0xFD`): ignored |
+`User_Connection::Run` dispatches `0x80` pre-auth (any other type before
+auth is rejected), `0x82` channel info, `0x81` usermask, `0x83` upload
+begin, `0x84` upload write and `0xC0` chat; everything else (including
+`0xFD`) is ignored.
 
 No sender or receiver for any type outside this list exists in the tree, and
 no type is defined that is not accounted for above (`0xFE` `MESSAGE_EXTENDED`
-is defined at `ninjam/netmsg.h:43` and referenced nowhere else).
+is defined in `ninjam/netmsg.h` and referenced nowhere else).
 
 ## Appendix B: Implementer's checklist
 
