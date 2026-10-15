@@ -591,17 +591,22 @@ int User_Connection::Run(User_Group *group, int *wantsleep)
             {
               if (!chnp) chnp=""; 
 
+              // channel names are relayed verbatim to every client and written
+              // into clipsort.log; a newline in one forges log lines
+              WDL_String sanchname(chnp);
+              sanitize_relay_text(sanchname.Get()); // no control chars in channel names
+
               int doactive=!(f&0x80);
 
               // only if something changes, do we add it to the rec
               int hadch=!m_channels[whichch].active != !doactive;
-              if (!hadch) hadch = strcmp(chnp,m_channels[whichch].name.Get());
+              if (!hadch) hadch = strcmp(sanchname.Get(),m_channels[whichch].name.Get());
               if (!hadch) hadch = m_channels[whichch].volume!=v;
               if (!hadch) hadch = m_channels[whichch].panning!=p;
               if (!hadch) hadch = m_channels[whichch].flags!=f;
 
               m_channels[whichch].active=doactive;
-              m_channels[whichch].name.Set(chnp);
+              m_channels[whichch].name.Set(sanchname.Get());
               m_channels[whichch].volume=v;
               m_channels[whichch].panning=p;
               m_channels[whichch].flags=f;
