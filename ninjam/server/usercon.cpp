@@ -601,17 +601,22 @@ int User_Connection::Run(User_Group *group, int *wantsleep)
             {
               if (!chnp) chnp=""; 
 
+              // channel names are relayed verbatim to every client and written
+              // into clipsort.log; a newline in one forges log lines
+              WDL_String sanchname(chnp);
+              sanitize_relay_text(sanchname.Get()); // no control chars in channel names
+
               int doactive=!(f&0x80);
 
               // only if something changes, do we add it to the rec
               int hadch=!m_channels[whichch].active != !doactive;
-              if (!hadch) hadch = strcmp(chnp,m_channels[whichch].name.Get());
+              if (!hadch) hadch = strcmp(sanchname.Get(),m_channels[whichch].name.Get());
               if (!hadch) hadch = m_channels[whichch].volume!=v;
               if (!hadch) hadch = m_channels[whichch].panning!=p;
               if (!hadch) hadch = m_channels[whichch].flags!=f;
 
               m_channels[whichch].active=doactive;
-              m_channels[whichch].name.Set(chnp);
+              m_channels[whichch].name.Set(sanchname.Get());
               m_channels[whichch].volume=v;
               m_channels[whichch].panning=p;
               m_channels[whichch].flags=f;
@@ -914,7 +919,7 @@ bool User_Connection::migrateToRoom(const char *p)
     char *c = (char *)m_wants_group_migration.Get();
     while (*c)
     {
-      if (*c == '\'' || *c == '\t' || *c == '\r' || *c == '\n') *c='_';
+      if (*c == '\'' || (unsigned char)*c < 0x20) *c='_'; // no control chars in room names
       c++;
     }
     return true;
@@ -1411,7 +1416,8 @@ void User_Group::onChatMessage(User_Connection *con, mpb_chat_message *msg)
 
       // send a privmsg back to sender, saying shit aint there
       WDL_String buf(pmatch == -2 ? "Username is ambiguous (specify partial IP): " : "No such user: ");
-      buf.Append(msg->parms[1]);          
+      buf.Append(msg->parms[1]);
+      sanitize_relay_text(buf.Get()); // the echoed name may carry control chars
       mpb_chat_message newmsg;
       newmsg.parms[0]="MSG";
       newmsg.parms[1]="";
